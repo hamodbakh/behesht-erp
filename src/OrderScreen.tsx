@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import SplitBillScreen from "./SplitBillScreen";
 
 type SeatSelection = number | "shared";
+
+type ShareMode =
+  | "none"
+  | "all"
+  | "selected"
+  | "unassigned";
 
 type MenuItem = {
   id: string;
@@ -15,11 +22,18 @@ type TicketItem = {
   name: string;
   price: number;
   qty: number;
+
+  // Service / seat assignment
   guest: SeatSelection;
+
   sentQty: number;
   voidedQty: number;
   notes: string;
   discount: number;
+
+  // Billing share information
+  shareMode: ShareMode;
+  sharedWith: number[];
 };
 
 type KitchenBatchItem = {
@@ -51,6 +65,7 @@ type OrderScreenProps = {
   orderId: string;
   tableName: string;
   guests: number;
+  onGuestsChange: (newGuestCount: number) => void;
   onBack: () => void;
 };
 
@@ -137,7 +152,9 @@ function loadTicket(key: string): TicketItem[] {
       `old-item-${index}`,
 
     name: item.name ?? "Item",
+
     price: Number(item.price ?? 0),
+
     qty: Number(item.qty ?? 1),
 
     guest:
@@ -146,10 +163,22 @@ function loadTicket(key: string): TicketItem[] {
         : Number(item.guest ?? 1),
 
     sentQty: Number(item.sentQty ?? 0),
+
     voidedQty: Number(item.voidedQty ?? 0),
 
     notes: item.notes ?? "",
+
     discount: Number(item.discount ?? 0),
+
+    shareMode:
+      item.shareMode ??
+      (item.guest === "shared"
+        ? "unassigned"
+        : "none"),
+
+    sharedWith: Array.isArray(item.sharedWith)
+      ? item.sharedWith.map(Number)
+      : [],
   }));
 }
 
@@ -157,6 +186,7 @@ export default function OrderScreen({
   orderId,
   tableName,
   guests,
+  onGuestsChange,
   onBack,
 }: OrderScreenProps) {
   const ticketStorageKey = `behesht-ticket-${orderId}`;
@@ -168,6 +198,9 @@ export default function OrderScreen({
 
   const [activeSeat, setActiveSeat] =
     useState<SeatSelection>(1);
+
+  const [serviceGuests, setServiceGuests] =
+    useState(guests);
 
   const [ticket, setTicket] =
     useState<TicketItem[]>(() =>
@@ -214,10 +247,19 @@ export default function OrderScreen({
   const [customVoidReason, setCustomVoidReason] =
     useState("");
 
+  const [shareItem, setShareItem] =
+    useState<TicketItem | null>(null);
+
+  const [shareSelection, setShareSelection] =
+    useState<number[]>([]);
+
   const [showKitchenHistory, setShowKitchenHistory] =
     useState(false);
 
   const [showVoidHistory, setShowVoidHistory] =
+    useState(false);
+
+  const [showSplitBill, setShowSplitBill] =
     useState(false);
 
   useEffect(() => {
@@ -240,6 +282,19 @@ export default function OrderScreen({
       JSON.stringify(voidRecords)
     );
   }, [voidStorageKey, voidRecords]);
+
+  useEffect(() => {
+    setServiceGuests(guests);
+  }, [guests]);
+
+  useEffect(() => {
+    if (
+      activeSeat !== "shared" &&
+      activeSeat > serviceGuests
+    ) {
+      setActiveSeat(serviceGuests);
+    }
+  }, [serviceGuests, activeSeat]);
 
   const filteredItems = useMemo(
     () =>
@@ -265,19 +320,65 @@ export default function OrderScreen({
   );
 
   const tax = subtotal * 0.13;
-  const total = subtotal + tax;
 
-  const unsentCount = ticket.reduce(
-    (sum, item) =>
-      sum +
-      Math.max(
-        0,
-        item.qty - item.sentQty
-      ),
-    0
-  );
+  const total =
+    subtotal + tax;
 
-  const addItem = (item: MenuItem) => {
+  const unsentCount =
+    ticket.reduce(
+      (sum, item) =>
+        sum +
+        Math.max(
+          0,
+          item.qty - item.sentQty
+        ),
+      0
+    );
+
+  const allGuestNumbers =
+    Array.from(
+      { length: serviceGuests },
+      (_, index) => index + 1
+    );
+
+  const addGuest = () => {
+    const newGuestCount =
+      serviceGuests + 1;
+
+    setServiceGuests(
+      newGuestCount
+    );
+
+    onGuestsChange(
+      newGuestCount
+    );
+
+    // Items shared with ALL guests
+    // automatically include the newly added guest.
+    setTicket((current) =>
+      current.map((item) =>
+        item.shareMode === "all"
+          ? {
+              ...item,
+              sharedWith: [
+                ...Array.from(
+                  { length: newGuestCount },
+                  (_, index) => index + 1
+                ),
+              ],
+            }
+          : item
+      )
+    );
+
+    setActiveSeat(
+      newGuestCount
+    );
+  };
+
+  const addItem = (
+    item: MenuItem
+  ) => {
     setTicket((current) => {
       const existing =
         current.find(
@@ -285,17 +386,21 @@ export default function OrderScreen({
             ticketItem.menuItemId === item.id &&
             ticketItem.guest === activeSeat &&
             ticketItem.notes === "" &&
-            ticketItem.discount === 0
+            ticketItem.discount === 0 &&
+            ticketItem.shareMode === "none"
         );
 
       if (existing) {
-        return current.map((ticketItem) =>
-          ticketItem.lineId === existing.lineId
-            ? {
-                ...ticketItem,
-                qty: ticketItem.qty + 1,
-              }
-            : ticketItem
+        return current.map(
+          (ticketItem) =>
+            ticketItem.lineId ===
+            existing.lineId
+              ? {
+                  ...ticketItem,
+                  qty:
+                    ticketItem.qty + 1,
+                }
+              : ticketItem
         );
       }
 
@@ -305,15 +410,28 @@ export default function OrderScreen({
           lineId: `${orderId}-${item.id}-${String(
             activeSeat
           )}-${Date.now()}`,
+
           menuItemId: item.id,
+
           name: item.name,
+
           price: item.price,
+
           qty: 1,
+
           guest: activeSeat,
+
           sentQty: 0,
+
           voidedQty: 0,
+
           notes: "",
+
           discount: 0,
+
+          shareMode: "none",
+
+          sharedWith: [],
         },
       ];
     });
@@ -334,6 +452,15 @@ export default function OrderScreen({
     );
   };
 
+  const openVoid = (
+    item: TicketItem
+  ) => {
+    setVoidItem(item);
+    setVoidQty(1);
+    setVoidReason("");
+    setCustomVoidReason("");
+  };
+
   const decreaseItem = (
     item: TicketItem
   ) => {
@@ -345,10 +472,12 @@ export default function OrderScreen({
     setTicket((current) =>
       current
         .map((ticketItem) =>
-          ticketItem.lineId === item.lineId
+          ticketItem.lineId ===
+          item.lineId
             ? {
                 ...ticketItem,
-                qty: ticketItem.qty - 1,
+                qty:
+                  ticketItem.qty - 1,
               }
             : ticketItem
         )
@@ -384,15 +513,6 @@ export default function OrderScreen({
     setSelectedLineId(null);
   };
 
-  const openVoid = (
-    item: TicketItem
-  ) => {
-    setVoidItem(item);
-    setVoidQty(1);
-    setVoidReason("");
-    setCustomVoidReason("");
-  };
-
   const moveItemToSeat = (
     lineId: string,
     newSeat: SeatSelection
@@ -402,7 +522,15 @@ export default function OrderScreen({
         item.lineId === lineId
           ? {
               ...item,
+
               guest: newSeat,
+
+              shareMode:
+                newSeat === "shared"
+                  ? "unassigned"
+                  : "none",
+
+              sharedWith: [],
             }
           : item
       )
@@ -411,15 +539,185 @@ export default function OrderScreen({
     setMoveItem(null);
   };
 
+  const openShare = (
+    item: TicketItem
+  ) => {
+    setShareItem(item);
+
+    if (
+      item.shareMode === "selected"
+    ) {
+      setShareSelection(
+        item.sharedWith
+      );
+    } else if (
+      item.shareMode === "all"
+    ) {
+      setShareSelection(
+        allGuestNumbers
+      );
+    } else {
+      setShareSelection([]);
+    }
+  };
+
+  const toggleShareGuest = (
+    guestNumber: number
+  ) => {
+    setShareSelection(
+      (current) =>
+        current.includes(
+          guestNumber
+        )
+          ? current.filter(
+              (guest) =>
+                guest !==
+                guestNumber
+            )
+          : [
+              ...current,
+              guestNumber,
+            ]
+    );
+  };
+
+  const shareWithAll = () => {
+    if (!shareItem) return;
+
+    setTicket((current) =>
+      current.map((item) =>
+        item.lineId ===
+        shareItem.lineId
+          ? {
+              ...item,
+
+              guest: "shared",
+
+              shareMode: "all",
+
+              sharedWith:
+                allGuestNumbers,
+            }
+          : item
+      )
+    );
+
+    setShareItem(null);
+    setShareSelection([]);
+    setSelectedLineId(null);
+  };
+
+  const shareWithSelected = () => {
+    if (!shareItem) return;
+
+    if (
+      shareSelection.length < 2
+    ) {
+      alert(
+        "Select at least 2 guests to share this item."
+      );
+
+      return;
+    }
+
+    setTicket((current) =>
+      current.map((item) =>
+        item.lineId ===
+        shareItem.lineId
+          ? {
+              ...item,
+
+              guest: "shared",
+
+              shareMode:
+                "selected",
+
+              sharedWith: [
+                ...shareSelection,
+              ].sort(
+                (a, b) =>
+                  a - b
+              ),
+            }
+          : item
+      )
+    );
+
+    setShareItem(null);
+    setShareSelection([]);
+    setSelectedLineId(null);
+  };
+
+  const keepAsShared = () => {
+    if (!shareItem) return;
+
+    setTicket((current) =>
+      current.map((item) =>
+        item.lineId ===
+        shareItem.lineId
+          ? {
+              ...item,
+
+              guest: "shared",
+
+              shareMode:
+                "unassigned",
+
+              sharedWith: [],
+            }
+          : item
+      )
+    );
+
+    setShareItem(null);
+    setShareSelection([]);
+    setSelectedLineId(null);
+  };
+
+  const removeSharing = () => {
+    if (!shareItem) return;
+
+    const destination =
+      typeof shareItem.guest ===
+      "number"
+        ? shareItem.guest
+        : 1;
+
+    setTicket((current) =>
+      current.map((item) =>
+        item.lineId ===
+        shareItem.lineId
+          ? {
+              ...item,
+
+              guest:
+                destination,
+
+              shareMode: "none",
+
+              sharedWith: [],
+            }
+          : item
+      )
+    );
+
+    setShareItem(null);
+    setShareSelection([]);
+    setSelectedLineId(null);
+  };
+
   const saveNotes = () => {
     if (!notesItem) return;
 
     setTicket((current) =>
       current.map((item) =>
-        item.lineId === notesItem.lineId
+        item.lineId ===
+        notesItem.lineId
           ? {
               ...item,
-              notes: notesText.trim(),
+
+              notes:
+                notesText.trim(),
             }
           : item
       )
@@ -443,10 +741,13 @@ export default function OrderScreen({
 
     setTicket((current) =>
       current.map((item) =>
-        item.lineId === discountItem.lineId
+        item.lineId ===
+        discountItem.lineId
           ? {
               ...item,
-              discount: safeDiscount,
+
+              discount:
+                safeDiscount,
             }
           : item
       )
@@ -460,12 +761,15 @@ export default function OrderScreen({
       ticket
         .map((item) => ({
           lineId: item.lineId,
+
           name: item.name,
+
           guest: item.guest,
 
           qty: Math.max(
             0,
-            item.qty - item.sentQty
+            item.qty -
+              item.sentQty
           ),
         }))
         .filter(
@@ -479,26 +783,34 @@ export default function OrderScreen({
       alert(
         "Nothing new to send to Kitchen."
       );
+
       return;
     }
 
     const batch: KitchenBatch = {
       id: `kitchen-${Date.now()}`,
+
       orderId,
+
       createdAt:
         new Date().toLocaleString(),
+
       items: unsentItems,
     };
 
-    setKitchenBatches((current) => [
-      ...current,
-      batch,
-    ]);
+    setKitchenBatches(
+      (current) => [
+        ...current,
+        batch,
+      ]
+    );
 
     setTicket((current) =>
       current.map((item) => ({
         ...item,
-        sentQty: item.qty,
+
+        sentQty:
+          item.qty,
       }))
     );
 
@@ -523,6 +835,7 @@ export default function OrderScreen({
       alert(
         "Please select or enter a Void reason."
       );
+
       return;
     }
 
@@ -543,20 +856,33 @@ export default function OrderScreen({
 
     const record: VoidRecord = {
       id: `void-${Date.now()}`,
+
       orderId,
-      lineId: voidItem.lineId,
-      itemName: voidItem.name,
-      guest: voidItem.guest,
+
+      lineId:
+        voidItem.lineId,
+
+      itemName:
+        voidItem.name,
+
+      guest:
+        voidItem.guest,
+
       qty: safeQty,
-      reason: finalReason,
+
+      reason:
+        finalReason,
+
       createdAt:
         new Date().toLocaleString(),
     };
 
-    setVoidRecords((current) => [
-      ...current,
-      record,
-    ]);
+    setVoidRecords(
+      (current) => [
+        ...current,
+        record,
+      ]
+    );
 
     setTicket((current) =>
       current
@@ -570,8 +896,10 @@ export default function OrderScreen({
 
           return {
             ...item,
+
             qty:
-              item.qty - safeQty,
+              item.qty -
+              safeQty,
 
             sentQty:
               Math.max(
@@ -627,41 +955,118 @@ export default function OrderScreen({
         0
       );
 
+  const shareDescription = (
+    item: TicketItem
+  ) => {
+    if (
+      item.shareMode === "all"
+    ) {
+      return "Shared with all guests";
+    }
+
+    if (
+      item.shareMode ===
+        "selected" &&
+      item.sharedWith.length > 0
+    ) {
+      return `Shared with ${item.sharedWith
+        .map(
+          (guest) =>
+            `Guest ${guest}`
+        )
+        .join(", ")}`;
+    }
+
+    if (
+      item.shareMode ===
+      "unassigned"
+    ) {
+      return "Shared — billing not assigned";
+    }
+
+    return "";
+  };
+
   const seatOrder: SeatSelection[] = [
     "shared",
+
     ...Array.from(
-      { length: guests },
+      {
+        length:
+          serviceGuests,
+      },
       (_, index) =>
         index + 1
     ),
   ];
 
+  if (showSplitBill) {
+    return (
+      <SplitBillScreen
+        ticket={ticket}
+        guests={
+          serviceGuests
+        }
+        onTicketChange={(
+          newTicket
+        ) =>
+          setTicket(
+            newTicket as TicketItem[]
+          )
+        }
+        onBack={() =>
+          setShowSplitBill(
+            false
+          )
+        }
+        onContinueToPayment={() =>
+          alert(
+            "Payment Screen will be built after Shared Bill splitting."
+          )
+        }
+      />
+    );
+  }
+
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#0F172A",
+
+        background:
+          "#0F172A",
+
         color: "white",
+
         fontFamily:
           "Arial, sans-serif",
+
         display: "flex",
-        flexDirection: "column",
+
+        flexDirection:
+          "column",
       }}
     >
-      {/* TOP */}
-
       <div
         style={{
-          background: "#020617",
-          padding: "14px 20px",
+          background:
+            "#020617",
+
+          padding:
+            "14px 20px",
 
           display: "flex",
+
           justifyContent:
             "space-between",
-          alignItems: "center",
+
+          alignItems:
+            "center",
 
           gap: 10,
-          flexWrap: "wrap",
+
+          flexWrap:
+            "wrap",
         }}
       >
         <div>
@@ -676,18 +1081,24 @@ export default function OrderScreen({
           <span
             style={{
               marginLeft: 15,
-              color: "#94A3B8",
+
+              color:
+                "#94A3B8",
             }}
           >
-            Guests: {guests}
+            Guests:{" "}
+            {serviceGuests}
           </span>
         </div>
 
         <div
           style={{
             display: "flex",
+
             gap: 8,
-            flexWrap: "wrap",
+
+            flexWrap:
+              "wrap",
           }}
         >
           <button
@@ -727,18 +1138,22 @@ export default function OrderScreen({
         </div>
       </div>
 
-      {/* GUESTS */}
-
       <div
         style={{
-          background: "#111827",
+          background:
+            "#111827",
+
           padding: 12,
 
           display: "flex",
-          gap: 8,
-          alignItems: "center",
 
-          overflowX: "auto",
+          gap: 8,
+
+          alignItems:
+            "center",
+
+          overflowX:
+            "auto",
 
           borderBottom:
             "1px solid #334155",
@@ -747,7 +1162,9 @@ export default function OrderScreen({
         <strong
           style={{
             marginRight: 8,
-            whiteSpace: "nowrap",
+
+            whiteSpace:
+              "nowrap",
           }}
         >
           Order For:
@@ -764,11 +1181,14 @@ export default function OrderScreen({
               "shared"
           )}
         >
-          <div>Shared</div>
+          <div>
+            Shared
+          </div>
 
           <div
             style={{
               fontSize: 11,
+
               marginTop: 4,
             }}
           >
@@ -779,11 +1199,7 @@ export default function OrderScreen({
           </div>
         </button>
 
-        {Array.from(
-          { length: guests },
-          (_, index) =>
-            index + 1
-        ).map(
+        {allGuestNumbers.map(
           (guestNumber) => (
             <button
               key={
@@ -807,6 +1223,7 @@ export default function OrderScreen({
               <div
                 style={{
                   fontSize: 11,
+
                   marginTop: 4,
                 }}
               >
@@ -818,23 +1235,62 @@ export default function OrderScreen({
             </button>
           )
         )}
+
+        <button
+          onClick={
+            addGuest
+          }
+          title="Add Guest"
+          style={{
+            minWidth: 58,
+
+            height: 55,
+
+            borderRadius: 10,
+
+            border:
+              "2px dashed #22C55E",
+
+            background:
+              "#052E16",
+
+            color:
+              "#86EFAC",
+
+            fontWeight:
+              "bold",
+
+            fontSize: 25,
+
+            cursor:
+              "pointer",
+          }}
+        >
+          +
+        </button>
       </div>
 
       <div
         style={{
-          background: "#172554",
+          background:
+            "#172554",
+
           padding: 9,
-          textAlign: "center",
-          color: "#BFDBFE",
+
+          textAlign:
+            "center",
+
+          color:
+            "#BFDBFE",
         }}
       >
         New items will be added to{" "}
         <strong>
-          {guestLabel(activeSeat)}
+          {guestLabel(
+            activeSeat
+          )}
         </strong>
       </div>
-
-      {/* MAIN 3 COLUMNS */}
 
       <div
         style={{
@@ -846,17 +1302,19 @@ export default function OrderScreen({
             "180px minmax(300px, 1fr) 420px",
 
           gap: 12,
+
           padding: 12,
 
           minHeight: 0,
         }}
       >
-        {/* CATEGORIES */}
-
         <div
           style={{
-            background: "#111827",
+            background:
+              "#111827",
+
             borderRadius: 14,
+
             padding: 12,
           }}
         >
@@ -871,9 +1329,7 @@ export default function OrderScreen({
           {categories.map(
             (category) => (
               <button
-                key={
-                  category
-                }
+                key={category}
                 onClick={() =>
                   setSelectedCategory(
                     category
@@ -881,10 +1337,13 @@ export default function OrderScreen({
                 }
                 style={{
                   width: "100%",
+
                   minHeight: 55,
+
                   marginBottom: 8,
 
                   border: "none",
+
                   borderRadius: 10,
 
                   background:
@@ -908,20 +1367,23 @@ export default function OrderScreen({
           )}
         </div>
 
-        {/* MENU */}
-
         <div
           style={{
-            background: "#111827",
+            background:
+              "#111827",
+
             borderRadius: 14,
+
             padding: 15,
 
-            overflowY: "auto",
+            overflowY:
+              "auto",
           }}
         >
           <h2
             style={{
               marginTop: 0,
+
               marginBottom: 5,
             }}
           >
@@ -930,8 +1392,11 @@ export default function OrderScreen({
 
           <div
             style={{
-              color: "#94A3B8",
+              color:
+                "#94A3B8",
+
               marginBottom: 18,
+
               fontSize: 13,
             }}
           >
@@ -954,13 +1419,9 @@ export default function OrderScreen({
             {filteredItems.map(
               (item) => (
                 <button
-                  key={
-                    item.id
-                  }
+                  key={item.id}
                   onClick={() =>
-                    addItem(
-                      item
-                    )
+                    addItem(item)
                   }
                   style={{
                     minHeight: 105,
@@ -984,6 +1445,7 @@ export default function OrderScreen({
                   <div
                     style={{
                       fontSize: 16,
+
                       fontWeight:
                         "bold",
                     }}
@@ -994,6 +1456,7 @@ export default function OrderScreen({
                   <div
                     style={{
                       marginTop: 10,
+
                       color:
                         "#86EFAC",
 
@@ -1012,16 +1475,19 @@ export default function OrderScreen({
           </div>
         </div>
 
-        {/* TICKET */}
-
         <div
           style={{
-            background: "#111827",
+            background:
+              "#111827",
+
             borderRadius: 14,
+
             padding: 15,
 
             display: "flex",
-            flexDirection: "column",
+
+            flexDirection:
+              "column",
 
             minHeight: 0,
           }}
@@ -1029,9 +1495,12 @@ export default function OrderScreen({
           <div
             style={{
               display: "flex",
+
               justifyContent:
                 "space-between",
-              alignItems: "center",
+
+              alignItems:
+                "center",
             }}
           >
             <h2
@@ -1048,10 +1517,14 @@ export default function OrderScreen({
                 style={{
                   background:
                     "#B45309",
+
                   borderRadius: 20,
+
                   padding:
                     "6px 10px",
+
                   fontSize: 12,
+
                   fontWeight:
                     "bold",
                 }}
@@ -1064,7 +1537,10 @@ export default function OrderScreen({
           <div
             style={{
               flex: 1,
-              overflowY: "auto",
+
+              overflowY:
+                "auto",
+
               minHeight: 250,
             }}
           >
@@ -1074,8 +1550,10 @@ export default function OrderScreen({
                 style={{
                   color:
                     "#64748B",
+
                   textAlign:
                     "center",
+
                   marginTop: 50,
                 }}
               >
@@ -1124,8 +1602,7 @@ export default function OrderScreen({
                         fontWeight:
                           "bold",
 
-                        display:
-                          "flex",
+                        display: "flex",
 
                         justifyContent:
                           "space-between",
@@ -1174,6 +1651,11 @@ export default function OrderScreen({
                         const lineTotal =
                           gross -
                           discountValue;
+
+                        const shareText =
+                          shareDescription(
+                            item
+                          );
 
                         return (
                           <div
@@ -1235,9 +1717,7 @@ export default function OrderScreen({
                               >
                                 <strong>
                                   {item.qty} ×{" "}
-                                  {
-                                    item.name
-                                  }
+                                  {item.name}
                                 </strong>
 
                                 <strong>
@@ -1272,9 +1752,7 @@ export default function OrderScreen({
                                     }}
                                   >
                                     ✓ Sent{" "}
-                                    {
-                                      item.sentQty
-                                    }
+                                    {item.sentQty}
                                   </span>
                                 )}
 
@@ -1287,9 +1765,7 @@ export default function OrderScreen({
                                     }}
                                   >
                                     New{" "}
-                                    {
-                                      unsentQty
-                                    }
+                                    {unsentQty}
                                   </span>
                                 )}
 
@@ -1302,10 +1778,7 @@ export default function OrderScreen({
                                     }}
                                   >
                                     Discount{" "}
-                                    {
-                                      item.discount
-                                    }
-                                    %
+                                    {item.discount}%
                                   </span>
                                 )}
 
@@ -1317,9 +1790,22 @@ export default function OrderScreen({
                                     }}
                                   >
                                     Note:{" "}
-                                    {
-                                      item.notes
-                                    }
+                                    {item.notes}
+                                  </span>
+                                )}
+
+                                {shareText && (
+                                  <span
+                                    style={{
+                                      color:
+                                        "#FDE68A",
+
+                                      fontWeight:
+                                        "bold",
+                                    }}
+                                  >
+                                    ↔{" "}
+                                    {shareText}
                                   </span>
                                 )}
                               </div>
@@ -1399,14 +1885,19 @@ export default function OrderScreen({
 
                                   <button
                                     onClick={() =>
-                                      moveItemToSeat(
-                                        item.lineId,
-                                        "shared"
+                                      openShare(
+                                        item
                                       )
                                     }
-                                    style={
-                                      actionButton
-                                    }
+                                    style={{
+                                      ...actionButton,
+
+                                      border:
+                                        "2px solid #F59E0B",
+
+                                      color:
+                                        "#FDE68A",
+                                    }}
                                   >
                                     Share
                                   </button>
@@ -1498,12 +1989,11 @@ export default function OrderScreen({
             )}
           </div>
 
-          {/* TOTAL */}
-
           <div
             style={{
               borderTop:
                 "2px solid #334155",
+
               paddingTop: 12,
             }}
           >
@@ -1520,6 +2010,7 @@ export default function OrderScreen({
             <div
               style={{
                 display: "flex",
+
                 justifyContent:
                   "space-between",
 
@@ -1533,10 +2024,7 @@ export default function OrderScreen({
               </strong>
 
               <strong>
-                $
-                {total.toFixed(
-                  2
-                )}
+                ${total.toFixed(2)}
               </strong>
             </div>
 
@@ -1546,11 +2034,13 @@ export default function OrderScreen({
               }
               style={{
                 width: "100%",
+
                 height: 56,
 
                 marginTop: 14,
 
                 border: "none",
+
                 borderRadius: 10,
 
                 background:
@@ -1576,18 +2066,31 @@ export default function OrderScreen({
             </button>
 
             <button
-              onClick={() =>
-                alert(
-                  "Checkout will be built next."
-                )
-              }
+              onClick={() => {
+                if (
+                  ticket.length ===
+                  0
+                ) {
+                  alert(
+                    "There are no items on this order."
+                  );
+
+                  return;
+                }
+
+                setShowSplitBill(
+                  true
+                );
+              }}
               style={{
                 width: "100%",
+
                 height: 55,
 
                 marginTop: 9,
 
                 border: "none",
+
                 borderRadius: 10,
 
                 background:
@@ -1604,11 +2107,196 @@ export default function OrderScreen({
                   "pointer",
               }}
             >
-              Checkout
+              Checkout / Split Bill
             </button>
           </div>
         </div>
       </div>
+
+      {/* SHARE */}
+
+      {shareItem && (
+        <Modal
+          title="Share Item"
+          onClose={() => {
+            setShareItem(
+              null
+            );
+
+            setShareSelection(
+              []
+            );
+          }}
+        >
+          <div
+            style={{
+              background:
+                "#1E293B",
+
+              borderRadius: 10,
+
+              padding: 12,
+
+              marginBottom: 12,
+            }}
+          >
+            <strong>
+              {shareItem.qty} ×{" "}
+              {shareItem.name}
+            </strong>
+
+            <div
+              style={{
+                marginTop: 6,
+
+                color:
+                  "#94A3B8",
+
+                fontSize: 12,
+              }}
+            >
+              Sharing changes only the bill. It does not resend the item to Kitchen.
+            </div>
+          </div>
+
+          <button
+            onClick={
+              shareWithAll
+            }
+            style={{
+              ...modalButton,
+
+              background:
+                "#16A34A",
+
+              fontSize: 16,
+            }}
+          >
+            Share with All Guests
+          </button>
+
+          <div
+            style={{
+              marginTop: 20,
+
+              marginBottom: 8,
+
+              fontWeight:
+                "bold",
+            }}
+          >
+            Or select guests:
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+
+              gridTemplateColumns:
+                "repeat(2, 1fr)",
+
+              gap: 8,
+            }}
+          >
+            {allGuestNumbers.map(
+              (guestNumber) => {
+                const selected =
+                  shareSelection.includes(
+                    guestNumber
+                  );
+
+                return (
+                  <button
+                    key={
+                      guestNumber
+                    }
+                    onClick={() =>
+                      toggleShareGuest(
+                        guestNumber
+                      )
+                    }
+                    style={{
+                      minHeight: 48,
+
+                      borderRadius: 9,
+
+                      border:
+                        selected
+                          ? "3px solid white"
+                          : "1px solid #475569",
+
+                      background:
+                        selected
+                          ? "#2563EB"
+                          : "#1E293B",
+
+                      color:
+                        "white",
+
+                      fontWeight:
+                        "bold",
+
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    {selected
+                      ? "✓ "
+                      : ""}
+                    Guest{" "}
+                    {guestNumber}
+                  </button>
+                );
+              }
+            )}
+          </div>
+
+          <button
+            onClick={
+              shareWithSelected
+            }
+            style={{
+              ...modalButton,
+
+              background:
+                "#2563EB",
+            }}
+          >
+            Share with Selected Guests
+          </button>
+
+          <button
+            onClick={
+              keepAsShared
+            }
+            style={{
+              ...modalButton,
+
+              background:
+                "#B45309",
+            }}
+          >
+            Keep as Shared / Decide at Checkout
+          </button>
+
+          {shareItem.shareMode !==
+            "none" && (
+            <button
+              onClick={
+                removeSharing
+              }
+              style={{
+                ...modalButton,
+
+                background:
+                  "#7F1D1D",
+              }}
+            >
+              Remove Sharing
+            </button>
+          )}
+        </Modal>
+      )}
 
       {/* MOVE */}
 
@@ -1639,27 +2327,25 @@ export default function OrderScreen({
             Shared
           </button>
 
-          {Array.from(
-            { length: guests },
-            (_, index) =>
-              index + 1
-          ).map((guestNumber) => (
-            <button
-              key={
-                guestNumber
-              }
-              onClick={() =>
-                moveItemToSeat(
-                  moveItem.lineId,
+          {allGuestNumbers.map(
+            (guestNumber) => (
+              <button
+                key={
                   guestNumber
-                )
-              }
-              style={modalButton}
-            >
-              Guest{" "}
-              {guestNumber}
-            </button>
-          ))}
+                }
+                onClick={() =>
+                  moveItemToSeat(
+                    moveItem.lineId,
+                    guestNumber
+                  )
+                }
+                style={modalButton}
+              >
+                Guest{" "}
+                {guestNumber}
+              </button>
+            )
+          )}
         </Modal>
       )}
 
@@ -1682,6 +2368,7 @@ export default function OrderScreen({
             placeholder="Example: no onion, extra lemon..."
             style={{
               width: "100%",
+
               minHeight: 120,
 
               boxSizing:
@@ -1702,9 +2389,12 @@ export default function OrderScreen({
           />
 
           <button
-            onClick={saveNotes}
+            onClick={
+              saveNotes
+            }
             style={{
               ...modalButton,
+
               background:
                 "#2563EB",
             }}
@@ -1720,7 +2410,9 @@ export default function OrderScreen({
         <Modal
           title="Item Discount"
           onClose={() =>
-            setDiscountItem(null)
+            setDiscountItem(
+              null
+            )
           }
         >
           <div
@@ -1733,7 +2425,14 @@ export default function OrderScreen({
               gap: 8,
             }}
           >
-            {[5, 10, 15, 20, 25, 50].map(
+            {[
+              5,
+              10,
+              15,
+              20,
+              25,
+              50,
+            ].map(
               (value) => (
                 <button
                   key={value}
@@ -1768,7 +2467,8 @@ export default function OrderScreen({
             onChange={(event) =>
               setDiscountPercent(
                 Number(
-                  event.target.value
+                  event.target
+                    .value
                 )
               )
             }
@@ -1776,9 +2476,12 @@ export default function OrderScreen({
           />
 
           <button
-            onClick={saveDiscount}
+            onClick={
+              saveDiscount
+            }
             style={{
               ...modalButton,
+
               background:
                 "#2563EB",
             }}
@@ -1801,8 +2504,11 @@ export default function OrderScreen({
             style={{
               background:
                 "#7F1D1D",
+
               padding: 12,
+
               borderRadius: 9,
+
               marginBottom: 15,
             }}
           >
@@ -1823,9 +2529,12 @@ export default function OrderScreen({
           <div
             style={{
               display: "flex",
+
               alignItems:
                 "center",
+
               gap: 12,
+
               marginBottom: 15,
             }}
           >
@@ -1873,10 +2582,13 @@ export default function OrderScreen({
           </div>
 
           <select
-            value={voidReason}
+            value={
+              voidReason
+            }
             onChange={(event) =>
               setVoidReason(
-                event.target.value
+                event.target
+                  .value
               )
             }
             style={inputStyle}
@@ -1905,7 +2617,8 @@ export default function OrderScreen({
               }
               onChange={(event) =>
                 setCustomVoidReason(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               placeholder="Enter reason"
@@ -1919,6 +2632,7 @@ export default function OrderScreen({
             }
             style={{
               ...modalButton,
+
               background:
                 "#DC2626",
             }}
@@ -1955,15 +2669,22 @@ export default function OrderScreen({
             .reverse()
             .map((batch) => (
               <div
-                key={batch.id}
-                style={historyCard}
+                key={
+                  batch.id
+                }
+                style={
+                  historyCard
+                }
               >
                 <strong>
                   {batch.createdAt}
                 </strong>
 
                 {batch.items.map(
-                  (item, index) => (
+                  (
+                    item,
+                    index
+                  ) => (
                     <div
                       key={`${batch.id}-${index}`}
                       style={{
@@ -2009,47 +2730,59 @@ export default function OrderScreen({
 
           {[...voidRecords]
             .reverse()
-            .map((record) => (
-              <div
-                key={record.id}
-                style={historyCard}
-              >
-                <strong>
-                  {
-                    record.itemName
-                  }
-                </strong>
-
-                <div>
-                  Qty:{" "}
-                  {record.qty}
-                </div>
-
-                <div>
-                  {guestLabel(
-                    record.guest
-                  )}
-                </div>
-
-                <div>
-                  Reason:{" "}
-                  {record.reason}
-                </div>
-
+            .map(
+              (record) => (
                 <div
-                  style={{
-                    color:
-                      "#94A3B8",
-                    fontSize: 12,
-                    marginTop: 5,
-                  }}
-                >
-                  {
-                    record.createdAt
+                  key={
+                    record.id
                   }
+                  style={
+                    historyCard
+                  }
+                >
+                  <strong>
+                    {
+                      record.itemName
+                    }
+                  </strong>
+
+                  <div>
+                    Qty:{" "}
+                    {
+                      record.qty
+                    }
+                  </div>
+
+                  <div>
+                    {guestLabel(
+                      record.guest
+                    )}
+                  </div>
+
+                  <div>
+                    Reason:{" "}
+                    {
+                      record.reason
+                    }
+                  </div>
+
+                  <div
+                    style={{
+                      color:
+                        "#94A3B8",
+
+                      fontSize: 12,
+
+                      marginTop: 5,
+                    }}
+                  >
+                    {
+                      record.createdAt
+                    }
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
         </Modal>
       )}
     </div>
@@ -2069,15 +2802,19 @@ function Modal({
     <div
       style={{
         position: "fixed",
+
         inset: 0,
 
         background:
           "rgba(0,0,0,.8)",
 
         display: "flex",
+
         justifyContent:
           "center",
-        alignItems: "center",
+
+        alignItems:
+          "center",
 
         zIndex: 9999,
 
@@ -2087,10 +2824,13 @@ function Modal({
       <div
         style={{
           width: "100%",
+
           maxWidth: 480,
 
           maxHeight: "85vh",
-          overflowY: "auto",
+
+          overflowY:
+            "auto",
 
           background:
             "#111827",
@@ -2113,7 +2853,9 @@ function Modal({
         {children}
 
         <button
-          onClick={onClose}
+          onClick={
+            onClose
+          }
           style={{
             ...modalButton,
 
@@ -2139,13 +2881,20 @@ function MoneyRow({
     <div
       style={{
         display: "flex",
+
         justifyContent:
           "space-between",
-        padding: "5px 0",
-        color: "#CBD5E1",
+
+        padding:
+          "5px 0",
+
+        color:
+          "#CBD5E1",
       }}
     >
-      <span>{label}</span>
+      <span>
+        {label}
+      </span>
 
       <strong>
         ${value.toFixed(2)}
@@ -2158,18 +2907,28 @@ const topButton = (
   background: string
 ) => ({
   background,
+
   color: "white",
+
   border: "none",
+
   borderRadius: 8,
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: "bold" as const,
+
+  padding:
+    "10px 14px",
+
+  cursor:
+    "pointer",
+
+  fontWeight:
+    "bold" as const,
 });
 
 const guestButton = (
   selected: boolean
 ) => ({
   minWidth: 100,
+
   height: 55,
 
   borderRadius: 10,
@@ -2184,9 +2943,11 @@ const guestButton = (
 
   color: "white",
 
-  fontWeight: "bold" as const,
+  fontWeight:
+    "bold" as const,
 
-  cursor: "pointer",
+  cursor:
+    "pointer",
 });
 
 const actionButton = {
@@ -2215,9 +2976,11 @@ const actionButton = {
 
 const qtyButton = {
   width: 34,
+
   height: 34,
 
   border: "none",
+
   borderRadius: 7,
 
   background:
