@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Login from "./Login";
 import Orders from "./Orders";
+import MenuManagement from "./MenuManagement";
 
 type StaffRole = "Server" | "Supervisor" | "Manager" | "Owner";
 
@@ -16,6 +17,7 @@ function App() {
   const [workingDayOpen, setWorkingDayOpen] = useState(false);
   const [checkedIn, setCheckedIn] = useState(false);
   const [showCloseDay, setShowCloseDay] = useState(false);
+  const [showMenuManagement, setShowMenuManagement] = useState(false);
 
   const canManageWorkingDay =
     currentUser?.role === "Owner" || currentUser?.role === "Manager";
@@ -203,6 +205,17 @@ function App() {
     );
   }
 
+  // BACK OFFICE - MENU MANAGEMENT
+  if (showMenuManagement) {
+    return (
+      <MenuManagement
+        onBack={() =>
+          setShowMenuManagement(false)
+        }
+      />
+    );
+  }
+
   // POS SCREEN
   return (
     <div>
@@ -249,6 +262,25 @@ function App() {
             flexWrap: "wrap",
           }}
         >
+          {canManageWorkingDay && (
+            <button
+              onClick={() =>
+                setShowMenuManagement(true)
+              }
+              style={{
+                background: "#0891B2",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 18px",
+                fontWeight: "bold",
+                cursor: "pointer",
+              }}
+            >
+              Back Office / Menu
+            </button>
+          )}
+
           {canManageWorkingDay && (
             <button
               onClick={() => setShowCloseDay(true)}

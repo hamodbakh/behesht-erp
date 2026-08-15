@@ -14,6 +14,7 @@ type MenuItem = {
   name: string;
   category: string;
   price: number;
+  available: boolean;
 };
 
 type TicketItem = {
@@ -70,52 +71,51 @@ type OrderScreenProps = {
   onOrderComplete: () => void;
 };
 
-const menuItems: MenuItem[] = [
-  { id: "1", name: "Koobideh", category: "Kebab", price: 19.99 },
-  { id: "2", name: "Joojeh", category: "Kebab", price: 21.99 },
-  { id: "3", name: "Vaziri", category: "Kebab", price: 27.99 },
+const MENU_STORAGE_KEY = "behesht-menu-items";
 
-  { id: "4", name: "Shirazi Salad", category: "Salad", price: 8.99 },
-  { id: "5", name: "Caesar Salad", category: "Salad", price: 12.99 },
-
-  {
-    id: "6",
-    name: "Kashk Bademjan",
-    category: "Appetizer",
-    price: 13.99,
-  },
-  {
-    id: "7",
-    name: "Hummus",
-    category: "Appetizer",
-    price: 9.99,
-  },
-
-  { id: "8", name: "Tea", category: "Drinks", price: 4.99 },
-  { id: "9", name: "Coke", category: "Drinks", price: 3.99 },
-  { id: "10", name: "Water", category: "Drinks", price: 2.99 },
-
-  {
-    id: "11",
-    name: "Classic Hookah",
-    category: "Hookah",
-    price: 29.99,
-  },
-  {
-    id: "12",
-    name: "Premium Hookah",
-    category: "Hookah",
-    price: 39.99,
-  },
+const defaultMenuItems: MenuItem[] = [
+  { id: "1", name: "Koobideh", category: "Kebab", price: 19.99, available: true },
+  { id: "2", name: "Joojeh", category: "Kebab", price: 21.99, available: true },
+  { id: "3", name: "Vaziri", category: "Kebab", price: 27.99, available: true },
+  { id: "4", name: "Shirazi Salad", category: "Salad", price: 8.99, available: true },
+  { id: "5", name: "Caesar Salad", category: "Salad", price: 12.99, available: true },
+  { id: "6", name: "Kashk Bademjan", category: "Appetizer", price: 13.99, available: true },
+  { id: "7", name: "Hummus", category: "Appetizer", price: 9.99, available: true },
+  { id: "8", name: "Tea", category: "Drinks", price: 4.99, available: true },
+  { id: "9", name: "Coke", category: "Drinks", price: 3.99, available: true },
+  { id: "10", name: "Water", category: "Drinks", price: 2.99, available: true },
+  { id: "11", name: "Classic Hookah", category: "Hookah", price: 29.99, available: true },
+  { id: "12", name: "Premium Hookah", category: "Hookah", price: 39.99, available: true },
 ];
 
-const categories = [
-  "Kebab",
-  "Appetizer",
-  "Salad",
-  "Drinks",
-  "Hookah",
-];
+function loadMenuItems(): MenuItem[] {
+  const saved = localStorage.getItem(MENU_STORAGE_KEY);
+
+  if (!saved) {
+    return defaultMenuItems;
+  }
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) {
+      return defaultMenuItems;
+    }
+
+    return parsed.map((item) => ({
+      id: String(item.id),
+      name: String(item.name ?? "Item"),
+      category: String(item.category ?? "Other"),
+      price: Number(item.price ?? 0),
+      available:
+        item.available === undefined
+          ? true
+          : Boolean(item.available),
+    }));
+  } catch {
+    return defaultMenuItems;
+  }
+}
 
 const voidReasons = [
   "Customer Changed Mind",
@@ -195,8 +195,11 @@ export default function OrderScreen({
   const kitchenStorageKey = `behesht-kitchen-${orderId}`;
   const voidStorageKey = `behesht-voids-${orderId}`;
 
+  const [menuItems, setMenuItems] =
+    useState<MenuItem[]>(loadMenuItems);
+
   const [selectedCategory, setSelectedCategory] =
-    useState("Kebab");
+    useState(() => loadMenuItems()[0]?.category ?? "Other");
 
   const [activeSeat, setActiveSeat] =
     useState<SeatSelection>(1);
@@ -298,13 +301,49 @@ export default function OrderScreen({
     }
   }, [serviceGuests, activeSeat]);
 
+  useEffect(() => {
+    const refreshMenu = () => {
+      setMenuItems(loadMenuItems());
+    };
+
+    window.addEventListener("focus", refreshMenu);
+    window.addEventListener("storage", refreshMenu);
+
+    return () => {
+      window.removeEventListener("focus", refreshMenu);
+      window.removeEventListener("storage", refreshMenu);
+    };
+  }, []);
+
+  const categories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          menuItems.map(
+            (item) => item.category
+          )
+        )
+      ),
+    [menuItems]
+  );
+
+  useEffect(() => {
+    if (
+      categories.length > 0 &&
+      !categories.includes(selectedCategory)
+    ) {
+      setSelectedCategory(categories[0]);
+    }
+  }, [categories, selectedCategory]);
+
   const filteredItems = useMemo(
     () =>
       menuItems.filter(
         (item) =>
-          item.category === selectedCategory
+          item.category === selectedCategory &&
+          item.available
       ),
-    [selectedCategory]
+    [menuItems, selectedCategory]
   );
 
   const subtotal = ticket.reduce(
@@ -381,6 +420,11 @@ export default function OrderScreen({
   const addItem = (
     item: MenuItem
   ) => {
+    if (!item.available) {
+      alert("This item is currently unavailable.");
+      return;
+    }
+
     setTicket((current) => {
       const existing =
         current.find(
