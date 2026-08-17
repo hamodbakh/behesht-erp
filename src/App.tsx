@@ -2,6 +2,7 @@ import { useState } from "react";
 import Login from "./Login";
 import Orders from "./Orders";
 import MenuManagement from "./MenuManagement";
+import ModifierManagement from "./ModifierManagement";
 
 type StaffRole = "Server" | "Supervisor" | "Manager" | "Owner";
 
@@ -18,6 +19,7 @@ function App() {
   const [checkedIn, setCheckedIn] = useState(false);
   const [showCloseDay, setShowCloseDay] = useState(false);
   const [showMenuManagement, setShowMenuManagement] = useState(false);
+  const [showModifierManagement, setShowModifierManagement] = useState(false);
 
   const canManageWorkingDay =
     currentUser?.role === "Owner" || currentUser?.role === "Manager";
@@ -216,6 +218,17 @@ function App() {
     );
   }
 
+  // BACK OFFICE - MODIFIER MANAGEMENT
+  if (showModifierManagement) {
+    return (
+      <ModifierManagement
+        onBack={() =>
+          setShowModifierManagement(false)
+        }
+      />
+    );
+  }
+
   // POS SCREEN
   return (
     <div>
@@ -278,6 +291,25 @@ function App() {
               }}
             >
               Back Office / Menu
+            </button>
+          )}
+
+          {canManageWorkingDay && (
+            <button
+              onClick={() =>
+                setShowModifierManagement(true)
+              }
+              style={{
+                background: "#2563EB",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 18px",
+                fontWeight: "bold",
+                cursor: "pointer",
+              }}
+            >
+              Back Office / Modifiers
             </button>
           )}
 

@@ -15,6 +15,33 @@ type MenuItem = {
   category: string;
   price: number;
   available: boolean;
+  modifierGroupIds: string[];
+};
+
+type ModifierOption = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  available: boolean;
+  nextGroupIds: string[];
+};
+
+type ModifierGroup = {
+  id: string;
+  name: string;
+  required: boolean;
+  minSelect: number;
+  maxSelect: number;
+  available: boolean;
+  options: ModifierOption[];
+};
+
+type SelectedModifier = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceDelta: number;
 };
 
 type TicketItem = {
@@ -35,6 +62,9 @@ type TicketItem = {
   // Billing share information
   shareMode: ShareMode;
   sharedWith: number[];
+
+  // Snapshot of modifier choices at the time of ordering.
+  selectedModifiers: SelectedModifier[];
 };
 
 type KitchenBatchItem = {
@@ -42,6 +72,7 @@ type KitchenBatchItem = {
   name: string;
   guest: SeatSelection;
   qty: number;
+  modifiers: string[];
 };
 
 type KitchenBatch = {
@@ -72,20 +103,21 @@ type OrderScreenProps = {
 };
 
 const MENU_STORAGE_KEY = "behesht-menu-items";
+const MODIFIER_STORAGE_KEY = "behesht-modifier-groups";
 
 const defaultMenuItems: MenuItem[] = [
-  { id: "1", name: "Koobideh", category: "Kebab", price: 19.99, available: true },
-  { id: "2", name: "Joojeh", category: "Kebab", price: 21.99, available: true },
-  { id: "3", name: "Vaziri", category: "Kebab", price: 27.99, available: true },
-  { id: "4", name: "Shirazi Salad", category: "Salad", price: 8.99, available: true },
-  { id: "5", name: "Caesar Salad", category: "Salad", price: 12.99, available: true },
-  { id: "6", name: "Kashk Bademjan", category: "Appetizer", price: 13.99, available: true },
-  { id: "7", name: "Hummus", category: "Appetizer", price: 9.99, available: true },
-  { id: "8", name: "Tea", category: "Drinks", price: 4.99, available: true },
-  { id: "9", name: "Coke", category: "Drinks", price: 3.99, available: true },
-  { id: "10", name: "Water", category: "Drinks", price: 2.99, available: true },
-  { id: "11", name: "Classic Hookah", category: "Hookah", price: 29.99, available: true },
-  { id: "12", name: "Premium Hookah", category: "Hookah", price: 39.99, available: true },
+  { id: "1", name: "Koobideh", category: "Kebab", price: 19.99, available: true, modifierGroupIds: [] },
+  { id: "2", name: "Joojeh", category: "Kebab", price: 21.99, available: true, modifierGroupIds: [] },
+  { id: "3", name: "Vaziri", category: "Kebab", price: 27.99, available: true, modifierGroupIds: [] },
+  { id: "4", name: "Shirazi Salad", category: "Salad", price: 8.99, available: true, modifierGroupIds: [] },
+  { id: "5", name: "Caesar Salad", category: "Salad", price: 12.99, available: true, modifierGroupIds: [] },
+  { id: "6", name: "Kashk Bademjan", category: "Appetizer", price: 13.99, available: true, modifierGroupIds: [] },
+  { id: "7", name: "Hummus", category: "Appetizer", price: 9.99, available: true, modifierGroupIds: [] },
+  { id: "8", name: "Tea", category: "Drinks", price: 4.99, available: true, modifierGroupIds: [] },
+  { id: "9", name: "Coke", category: "Drinks", price: 3.99, available: true, modifierGroupIds: [] },
+  { id: "10", name: "Water", category: "Drinks", price: 2.99, available: true, modifierGroupIds: [] },
+  { id: "11", name: "Classic Hookah", category: "Hookah", price: 29.99, available: true, modifierGroupIds: [] },
+  { id: "12", name: "Premium Hookah", category: "Hookah", price: 39.99, available: true, modifierGroupIds: [] },
 ];
 
 function loadMenuItems(): MenuItem[] {
@@ -111,9 +143,52 @@ function loadMenuItems(): MenuItem[] {
         item.available === undefined
           ? true
           : Boolean(item.available),
+      modifierGroupIds: Array.isArray(item.modifierGroupIds)
+        ? item.modifierGroupIds.map(String)
+        : [],
     }));
   } catch {
     return defaultMenuItems;
+  }
+}
+
+function loadModifierGroups(): ModifierGroup[] {
+  const saved = localStorage.getItem(MODIFIER_STORAGE_KEY);
+
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((group) => ({
+      id: String(group.id),
+      name: String(group.name ?? "Modifier Group"),
+      required: Boolean(group.required),
+      minSelect: Math.max(0, Number(group.minSelect ?? 0)),
+      maxSelect: Math.max(1, Number(group.maxSelect ?? 1)),
+      available:
+        group.available === undefined
+          ? true
+          : Boolean(group.available),
+      options: Array.isArray(group.options)
+        ? group.options.map((option: any) => ({
+            id: String(option.id),
+            name: String(option.name ?? "Option"),
+            priceDelta: Number(option.priceDelta ?? 0),
+            available:
+              option.available === undefined
+                ? true
+                : Boolean(option.available),
+            nextGroupIds: Array.isArray(option.nextGroupIds)
+              ? option.nextGroupIds.map(String)
+              : [],
+          }))
+        : [],
+    }));
+  } catch {
+    return [];
   }
 }
 
@@ -180,6 +255,16 @@ function loadTicket(key: string): TicketItem[] {
     sharedWith: Array.isArray(item.sharedWith)
       ? item.sharedWith.map(Number)
       : [],
+
+    selectedModifiers: Array.isArray(item.selectedModifiers)
+      ? item.selectedModifiers.map((modifier: any) => ({
+          groupId: String(modifier.groupId ?? ""),
+          groupName: String(modifier.groupName ?? "Modifier"),
+          optionId: String(modifier.optionId ?? ""),
+          optionName: String(modifier.optionName ?? "Option"),
+          priceDelta: Number(modifier.priceDelta ?? 0),
+        }))
+      : [],
   }));
 }
 
@@ -197,6 +282,28 @@ export default function OrderScreen({
 
   const [menuItems, setMenuItems] =
     useState<MenuItem[]>(loadMenuItems);
+
+  const [modifierGroups, setModifierGroups] =
+    useState<ModifierGroup[]>(loadModifierGroups);
+
+  const [pendingModifierItem, setPendingModifierItem] =
+    useState<MenuItem | null>(null);
+
+  const [modifierQueue, setModifierQueue] =
+    useState<string[]>([]);
+
+  const [processedModifierGroupIds, setProcessedModifierGroupIds] =
+    useState<string[]>([]);
+
+  const [modifierSelections, setModifierSelections] =
+    useState<Record<string, string[]>>({});
+
+  const [editingModifierLineId, setEditingModifierLineId] =
+    useState<string | null>(null);
+
+  const [editingModifierBasePrice, setEditingModifierBasePrice] =
+    useState<number | null>(null);
+
 
   const [selectedCategory, setSelectedCategory] =
     useState(() => loadMenuItems()[0]?.category ?? "Other");
@@ -304,6 +411,7 @@ export default function OrderScreen({
   useEffect(() => {
     const refreshMenu = () => {
       setMenuItems(loadMenuItems());
+      setModifierGroups(loadModifierGroups());
     };
 
     window.addEventListener("focus", refreshMenu);
@@ -417,13 +525,28 @@ export default function OrderScreen({
     );
   };
 
-  const addItem = (
-    item: MenuItem
+  const modifierSignature = (
+    modifiers: SelectedModifier[]
+  ) =>
+    modifiers
+      .map(
+        (modifier) =>
+          `${modifier.groupId}:${modifier.optionId}:${modifier.priceDelta}`
+      )
+      .sort()
+      .join("|");
+
+  const commitItemToTicket = (
+    item: MenuItem,
+    selectedModifiers: SelectedModifier[]
   ) => {
-    if (!item.available) {
-      alert("This item is currently unavailable.");
-      return;
-    }
+    const modifierPrice = selectedModifiers.reduce(
+      (sum, modifier) => sum + modifier.priceDelta,
+      0
+    );
+
+    const finalPrice = item.price + modifierPrice;
+    const signature = modifierSignature(selectedModifiers);
 
     setTicket((current) => {
       const existing =
@@ -433,18 +556,19 @@ export default function OrderScreen({
             ticketItem.guest === activeSeat &&
             ticketItem.notes === "" &&
             ticketItem.discount === 0 &&
-            ticketItem.shareMode === "none"
+            ticketItem.shareMode === "none" &&
+            modifierSignature(
+              ticketItem.selectedModifiers ?? []
+            ) === signature
         );
 
       if (existing) {
         return current.map(
           (ticketItem) =>
-            ticketItem.lineId ===
-            existing.lineId
+            ticketItem.lineId === existing.lineId
               ? {
                   ...ticketItem,
-                  qty:
-                    ticketItem.qty + 1,
+                  qty: ticketItem.qty + 1,
                 }
               : ticketItem
         );
@@ -461,7 +585,9 @@ export default function OrderScreen({
 
           name: item.name,
 
-          price: item.price,
+          // Snapshot the final unit price so later menu edits do not
+          // change an existing ticket.
+          price: finalPrice,
 
           qty: 1,
 
@@ -478,9 +604,292 @@ export default function OrderScreen({
           shareMode: "none",
 
           sharedWith: [],
+
+          selectedModifiers,
         },
       ];
     });
+  };
+
+  const closeModifierFlow = () => {
+    setPendingModifierItem(null);
+    setModifierQueue([]);
+    setProcessedModifierGroupIds([]);
+    setModifierSelections({});
+    setEditingModifierLineId(null);
+    setEditingModifierBasePrice(null);
+  };
+
+  const startModifierFlow = (
+    item: MenuItem
+  ) => {
+    const startingGroups =
+      item.modifierGroupIds.filter((groupId) => {
+        const group = modifierGroups.find(
+          (candidate) => candidate.id === groupId
+        );
+
+        return Boolean(group?.available);
+      });
+
+    if (startingGroups.length === 0) {
+      commitItemToTicket(item, []);
+      return;
+    }
+
+    setEditingModifierLineId(null);
+    setEditingModifierBasePrice(null);
+    setPendingModifierItem(item);
+    setModifierQueue(startingGroups);
+    setProcessedModifierGroupIds([]);
+    setModifierSelections({});
+  };
+
+  const openEditModifierFlow = (
+    ticketItem: TicketItem
+  ) => {
+    if (ticketItem.sentQty > 0) {
+      alert(
+        "Modifiers cannot be edited after this item has been sent to Kitchen. Kitchen Update / Change will be added later."
+      );
+      return;
+    }
+
+    const menuItem = menuItems.find(
+      (item) => item.id === ticketItem.menuItemId
+    );
+
+    if (!menuItem) {
+      alert("The original menu item could not be found.");
+      return;
+    }
+
+    const startingGroups =
+      menuItem.modifierGroupIds.filter((groupId) => {
+        const group = modifierGroups.find(
+          (candidate) => candidate.id === groupId
+        );
+
+        return Boolean(group?.available);
+      });
+
+    if (startingGroups.length === 0) {
+      alert("This menu item has no active modifier groups.");
+      return;
+    }
+
+    const existingModifierTotal =
+      (ticketItem.selectedModifiers ?? []).reduce(
+        (sum, modifier) =>
+          sum + modifier.priceDelta,
+        0
+      );
+
+    const preselected: Record<string, string[]> = {};
+
+    (ticketItem.selectedModifiers ?? []).forEach(
+      (modifier) => {
+        preselected[modifier.groupId] = [
+          ...(preselected[modifier.groupId] ?? []),
+          modifier.optionId,
+        ];
+      }
+    );
+
+    setEditingModifierLineId(ticketItem.lineId);
+    setEditingModifierBasePrice(
+      ticketItem.price - existingModifierTotal
+    );
+    setPendingModifierItem(menuItem);
+    setModifierQueue(startingGroups);
+    setProcessedModifierGroupIds([]);
+    setModifierSelections(preselected);
+  };
+
+  const addItem = (
+    item: MenuItem
+  ) => {
+    if (!item.available) {
+      alert("This item is currently unavailable.");
+      return;
+    }
+
+    startModifierFlow(item);
+  };
+
+  const currentModifierGroup =
+    modifierQueue.length > 0
+      ? modifierGroups.find(
+          (group) => group.id === modifierQueue[0]
+        ) ?? null
+      : null;
+
+  const toggleModifierOption = (
+    group: ModifierGroup,
+    optionId: string
+  ) => {
+    const current =
+      modifierSelections[group.id] ?? [];
+
+    const alreadySelected =
+      current.includes(optionId);
+
+    let next: string[];
+
+    if (alreadySelected) {
+      next = current.filter(
+        (id) => id !== optionId
+      );
+    } else if (group.maxSelect <= 1) {
+      next = [optionId];
+    } else if (
+      current.length < group.maxSelect
+    ) {
+      next = [...current, optionId];
+    } else {
+      return;
+    }
+
+    setModifierSelections((all) => ({
+      ...all,
+      [group.id]: next,
+    }));
+  };
+
+  const continueModifierFlow = () => {
+    if (
+      !pendingModifierItem ||
+      !currentModifierGroup
+    ) {
+      return;
+    }
+
+    const selectedIds =
+      modifierSelections[currentModifierGroup.id] ?? [];
+
+    const minimum =
+      currentModifierGroup.required
+        ? Math.max(1, currentModifierGroup.minSelect)
+        : currentModifierGroup.minSelect;
+
+    if (selectedIds.length < minimum) {
+      alert(
+        `Please select at least ${minimum} option(s) for ${currentModifierGroup.name}.`
+      );
+      return;
+    }
+
+    const selectedOptions =
+      currentModifierGroup.options.filter(
+        (option) =>
+          option.available &&
+          selectedIds.includes(option.id)
+      );
+
+    const nextConditionalIds =
+      selectedOptions
+        .flatMap((option) => option.nextGroupIds)
+        .filter((groupId) => {
+          const nextGroup = modifierGroups.find(
+            (group) => group.id === groupId
+          );
+
+          return Boolean(nextGroup?.available);
+        });
+
+    const processed = [
+      ...processedModifierGroupIds,
+      currentModifierGroup.id,
+    ];
+
+    const remaining = modifierQueue.slice(1);
+
+    const uniqueNext = nextConditionalIds.filter(
+      (groupId) =>
+        !processed.includes(groupId) &&
+        !remaining.includes(groupId)
+    );
+
+    const nextQueue = [
+      ...uniqueNext,
+      ...remaining,
+    ];
+
+    if (nextQueue.length > 0) {
+      setProcessedModifierGroupIds(processed);
+      setModifierQueue(nextQueue);
+      return;
+    }
+
+    const selectedModifiers: SelectedModifier[] = [];
+
+    const completedGroupIds = [
+      ...processed,
+    ];
+
+    completedGroupIds.forEach((groupId) => {
+      const group = modifierGroups.find(
+        (candidate) => candidate.id === groupId
+      );
+
+      if (!group) return;
+
+      const ids =
+        modifierSelections[groupId] ?? [];
+
+      group.options
+        .filter(
+          (option) =>
+            option.available &&
+            ids.includes(option.id)
+        )
+        .forEach((option) => {
+          selectedModifiers.push({
+            groupId: group.id,
+            groupName: group.name,
+            optionId: option.id,
+            optionName: option.name,
+            priceDelta: option.priceDelta,
+          });
+        });
+    });
+
+    if (
+      editingModifierLineId &&
+      editingModifierBasePrice !== null
+    ) {
+      const modifierPrice =
+        selectedModifiers.reduce(
+          (sum, modifier) =>
+            sum + modifier.priceDelta,
+          0
+        );
+
+      setTicket((current) =>
+        current.map((item) =>
+          item.lineId === editingModifierLineId
+            ? {
+                ...item,
+                price:
+                  editingModifierBasePrice +
+                  modifierPrice,
+                selectedModifiers,
+              }
+            : item
+        )
+      );
+
+      setSelectedLineId(
+        editingModifierLineId
+      );
+    } else {
+      commitItemToTicket(
+        pendingModifierItem,
+        selectedModifiers
+      );
+    }
+
+    closeModifierFlow();
   };
 
   const increaseItem = (
@@ -817,6 +1226,12 @@ export default function OrderScreen({
             item.qty -
               item.sentQty
           ),
+
+          modifiers:
+            (item.selectedModifiers ?? []).map(
+              (modifier) =>
+                `${modifier.groupName}: ${modifier.optionName}`
+            ),
         }))
         .filter(
           (item) =>
@@ -1077,7 +1492,11 @@ export default function OrderScreen({
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100vh",
+
+        maxHeight: "100vh",
+
+        overflow: "hidden",
 
         background:
           "#0F172A",
@@ -1099,7 +1518,7 @@ export default function OrderScreen({
             "#020617",
 
           padding:
-            "14px 20px",
+            "8px 14px",
 
           display: "flex",
 
@@ -1112,7 +1531,9 @@ export default function OrderScreen({
           gap: 10,
 
           flexWrap:
-            "wrap",
+            "nowrap",
+
+          flex: "0 0 auto",
         }}
       >
         <div>
@@ -1189,7 +1610,8 @@ export default function OrderScreen({
           background:
             "#111827",
 
-          padding: 12,
+          padding:
+            "7px 10px",
 
           display: "flex",
 
@@ -1203,6 +1625,8 @@ export default function OrderScreen({
 
           borderBottom:
             "1px solid #334155",
+
+          flex: "0 0 auto",
         }}
       >
         <strong
@@ -1290,7 +1714,7 @@ export default function OrderScreen({
           style={{
             minWidth: 58,
 
-            height: 55,
+            height: 46,
 
             borderRadius: 10,
 
@@ -1321,7 +1745,11 @@ export default function OrderScreen({
           background:
             "#172554",
 
-          padding: 9,
+          padding: 5,
+
+          fontSize: 12,
+
+          flex: "0 0 auto",
 
           textAlign:
             "center",
@@ -1345,13 +1773,15 @@ export default function OrderScreen({
           display: "grid",
 
           gridTemplateColumns:
-            "180px minmax(300px, 1fr) 420px",
+            "165px minmax(300px, 1fr) 390px",
 
-          gap: 12,
+          gap: 8,
 
-          padding: 12,
+          padding: 8,
 
           minHeight: 0,
+
+          overflow: "hidden",
         }}
       >
         <div
@@ -1361,7 +1791,12 @@ export default function OrderScreen({
 
             borderRadius: 14,
 
-            padding: 12,
+            padding: 10,
+
+            minHeight: 0,
+
+            overflowY:
+              "auto",
           }}
         >
           <h3
@@ -1420,7 +1855,9 @@ export default function OrderScreen({
 
             borderRadius: 14,
 
-            padding: 15,
+            padding: 10,
+
+            minHeight: 0,
 
             overflowY:
               "auto",
@@ -1470,7 +1907,7 @@ export default function OrderScreen({
                     addItem(item)
                   }
                   style={{
-                    minHeight: 105,
+                    minHeight: 88,
 
                     borderRadius: 12,
 
@@ -1528,7 +1965,7 @@ export default function OrderScreen({
 
             borderRadius: 14,
 
-            padding: 15,
+            padding: 10,
 
             display: "flex",
 
@@ -1587,7 +2024,7 @@ export default function OrderScreen({
               overflowY:
                 "auto",
 
-              minHeight: 250,
+              minHeight: 0,
             }}
           >
             {ticket.length ===
@@ -1629,7 +2066,7 @@ export default function OrderScreen({
                       seat
                     )}
                     style={{
-                      marginBottom: 18,
+                      marginBottom: 10,
                     }}
                   >
                     <div
@@ -1840,6 +2277,23 @@ export default function OrderScreen({
                                   </span>
                                 )}
 
+                                {(item.selectedModifiers ?? []).map(
+                                  (modifier) => (
+                                    <span
+                                      key={`${item.lineId}-${modifier.groupId}-${modifier.optionId}`}
+                                      style={{
+                                        color: "#C4B5FD",
+                                      }}
+                                    >
+                                      {modifier.groupName}:{" "}
+                                      {modifier.optionName}
+                                      {modifier.priceDelta !== 0
+                                        ? ` (${modifier.priceDelta > 0 ? "+" : ""}$${modifier.priceDelta.toFixed(2)})`
+                                        : ""}
+                                    </span>
+                                  )
+                                )}
+
                                 {shareText && (
                                   <span
                                     style={{
@@ -1915,6 +2369,48 @@ export default function OrderScreen({
                                   >
                                     Notes
                                   </button>
+
+                                  {(
+                                    menuItems.find(
+                                      (menuItem) =>
+                                        menuItem.id ===
+                                        item.menuItemId
+                                    )?.modifierGroupIds
+                                      .length ?? 0
+                                  ) > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        openEditModifierFlow(
+                                          item
+                                        )
+                                      }
+                                      style={{
+                                        ...actionButton,
+
+                                        border:
+                                          item.sentQty > 0
+                                            ? "2px solid #475569"
+                                            : "2px solid #8B5CF6",
+
+                                        color:
+                                          item.sentQty > 0
+                                            ? "#94A3B8"
+                                            : "#DDD6FE",
+
+                                        opacity:
+                                          item.sentQty > 0
+                                            ? 0.65
+                                            : 1,
+                                      }}
+                                      title={
+                                        item.sentQty > 0
+                                          ? "Sent items require a Kitchen Update / Change."
+                                          : "Change modifiers before sending to Kitchen."
+                                      }
+                                    >
+                                      Edit Modifiers
+                                    </button>
+                                  )}
 
                                   <button
                                     onClick={() =>
@@ -2040,7 +2536,9 @@ export default function OrderScreen({
               borderTop:
                 "2px solid #334155",
 
-              paddingTop: 12,
+              paddingTop: 8,
+
+              flex: "0 0 auto",
             }}
           >
             <MoneyRow
@@ -2060,9 +2558,9 @@ export default function OrderScreen({
                 justifyContent:
                   "space-between",
 
-                fontSize: 22,
+                fontSize: 18,
 
-                marginTop: 10,
+                marginTop: 5,
               }}
             >
               <strong>
@@ -2081,9 +2579,9 @@ export default function OrderScreen({
               style={{
                 width: "100%",
 
-                height: 56,
+                height: 46,
 
-                marginTop: 14,
+                marginTop: 8,
 
                 border: "none",
 
@@ -2131,9 +2629,9 @@ export default function OrderScreen({
               style={{
                 width: "100%",
 
-                height: 55,
+                height: 46,
 
-                marginTop: 9,
+                marginTop: 6,
 
                 border: "none",
 
@@ -2158,6 +2656,132 @@ export default function OrderScreen({
           </div>
         </div>
       </div>
+
+      {/* MODIFIERS */}
+
+      {pendingModifierItem && currentModifierGroup && (
+        <Modal
+          title={`${
+            editingModifierLineId
+              ? "Edit "
+              : ""
+          }${pendingModifierItem.name} — ${currentModifierGroup.name}`}
+          onClose={closeModifierFlow}
+        >
+          <div
+            style={{
+              background: "#0F172A",
+              border: "1px solid #334155",
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 10,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <strong>
+                {currentModifierGroup.required
+                  ? "Required"
+                  : "Optional"}
+              </strong>
+
+              <span
+                style={{
+                  color: "#94A3B8",
+                  fontSize: 12,
+                }}
+              >
+                Select {currentModifierGroup.minSelect}–{currentModifierGroup.maxSelect}
+              </span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(2, minmax(0, 1fr))",
+              gap: 8,
+            }}
+          >
+            {currentModifierGroup.options
+              .filter((option) => option.available)
+              .map((option) => {
+                const selected =
+                  (
+                    modifierSelections[
+                      currentModifierGroup.id
+                    ] ?? []
+                  ).includes(option.id);
+
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() =>
+                      toggleModifierOption(
+                        currentModifierGroup,
+                        option.id
+                      )
+                    }
+                    style={{
+                      minHeight: 58,
+                      borderRadius: 10,
+                      border: selected
+                        ? "3px solid white"
+                        : "1px solid #475569",
+                      background: selected
+                        ? "#2563EB"
+                        : "#1E293B",
+                      color: "white",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                      padding: 9,
+                    }}
+                  >
+                    <div>
+                      {selected ? "✓ " : ""}
+                      {option.name}
+                    </div>
+
+                    {option.priceDelta !== 0 && (
+                      <div
+                        style={{
+                          marginTop: 5,
+                          color: "#86EFAC",
+                          fontSize: 12,
+                        }}
+                      >
+                        {option.priceDelta > 0 ? "+" : ""}
+                        ${option.priceDelta.toFixed(2)}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+          </div>
+
+          <button
+            onClick={continueModifierFlow}
+            style={{
+              ...modalButton,
+              background: "#22C55E",
+              fontSize: 16,
+              marginTop: 14,
+            }}
+          >
+            {modifierQueue.length > 1
+              ? "Continue"
+              : editingModifierLineId
+              ? "Save Changes"
+              : "Add to Order"}
+          </button>
+        </Modal>
+      )}
 
       {/* SHARE */}
 
@@ -2742,6 +3366,22 @@ export default function OrderScreen({
                       {" — "}
                       {guestLabel(
                         item.guest
+                      )}
+
+                      {item.modifiers?.map(
+                        (modifier, modifierIndex) => (
+                          <div
+                            key={`${batch.id}-${index}-modifier-${modifierIndex}`}
+                            style={{
+                              color: "#C4B5FD",
+                              fontSize: 12,
+                              marginTop: 3,
+                              paddingLeft: 12,
+                            }}
+                          >
+                            • {modifier}
+                          </div>
+                        )
                       )}
                     </div>
                   )

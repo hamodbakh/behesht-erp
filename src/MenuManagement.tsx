@@ -6,9 +6,17 @@ export type MenuItemRecord = {
   category: string;
   price: number;
   available: boolean;
+  modifierGroupIds: string[];
+};
+
+type ModifierGroupRecord = {
+  id: string;
+  name: string;
+  available: boolean;
 };
 
 const MENU_STORAGE_KEY = "behesht-menu-items";
+const MODIFIER_STORAGE_KEY = "behesht-modifier-groups";
 
 const defaultMenu: MenuItemRecord[] = [
   {
@@ -17,6 +25,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Kebab",
     price: 19.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "2",
@@ -24,6 +33,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Kebab",
     price: 21.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "3",
@@ -31,6 +41,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Kebab",
     price: 27.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "4",
@@ -38,6 +49,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Salad",
     price: 8.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "5",
@@ -45,6 +57,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Salad",
     price: 12.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "6",
@@ -52,6 +65,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Appetizer",
     price: 13.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "7",
@@ -59,6 +73,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Appetizer",
     price: 9.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "8",
@@ -66,6 +81,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Drinks",
     price: 4.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "9",
@@ -73,6 +89,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Drinks",
     price: 3.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "10",
@@ -80,6 +97,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Drinks",
     price: 2.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "11",
@@ -87,6 +105,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Hookah",
     price: 29.99,
     available: true,
+    modifierGroupIds: [],
   },
   {
     id: "12",
@@ -94,6 +113,7 @@ const defaultMenu: MenuItemRecord[] = [
     category: "Hookah",
     price: 39.99,
     available: true,
+    modifierGroupIds: [],
   },
 ];
 
@@ -120,9 +140,37 @@ function loadMenu(): MenuItemRecord[] {
         item.available === undefined
           ? true
           : Boolean(item.available),
+      modifierGroupIds: Array.isArray(item.modifierGroupIds)
+        ? item.modifierGroupIds.map(String)
+        : [],
     }));
   } catch {
     return defaultMenu;
+  }
+}
+
+function loadModifierGroups(): ModifierGroupRecord[] {
+  const saved = localStorage.getItem(MODIFIER_STORAGE_KEY);
+
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map((group) => ({
+      id: String(group.id),
+      name: String(group.name ?? "Modifier Group"),
+      available:
+        group.available === undefined
+          ? true
+          : Boolean(group.available),
+    }));
+  } catch {
+    return [];
   }
 }
 
@@ -133,6 +181,9 @@ export default function MenuManagement({
 }) {
   const [items, setItems] =
     useState<MenuItemRecord[]>(loadMenu);
+
+  const [modifierGroups, setModifierGroups] =
+    useState<ModifierGroupRecord[]>(loadModifierGroups);
 
   const [selectedId, setSelectedId] =
     useState<string | null>(null);
@@ -205,6 +256,20 @@ export default function MenuManagement({
     );
   }, [items]);
 
+  useEffect(() => {
+    const refreshModifierGroups = () => {
+      setModifierGroups(loadModifierGroups());
+    };
+
+    window.addEventListener("focus", refreshModifierGroups);
+    window.addEventListener("storage", refreshModifierGroups);
+
+    return () => {
+      window.removeEventListener("focus", refreshModifierGroups);
+      window.removeEventListener("storage", refreshModifierGroups);
+    };
+  }, []);
+
   const addNewItem = () => {
     const newItem: MenuItemRecord = {
       id: `menu-${Date.now()}`,
@@ -212,6 +277,7 @@ export default function MenuManagement({
       category: "Other",
       price: 0,
       available: true,
+      modifierGroupIds: [],
     };
 
     setItems(
@@ -246,6 +312,21 @@ export default function MenuManagement({
               : item
         )
     );
+  };
+
+  const toggleModifierGroup = (groupId: string) => {
+    if (!selectedItem) return;
+
+    const assigned =
+      selectedItem.modifierGroupIds.includes(groupId);
+
+    updateSelectedItem({
+      modifierGroupIds: assigned
+        ? selectedItem.modifierGroupIds.filter(
+            (id) => id !== groupId
+          )
+        : [...selectedItem.modifierGroupIds, groupId],
+    });
   };
 
   const deleteSelectedItem =
@@ -567,6 +648,18 @@ export default function MenuManagement({
                       ? "Available"
                       : "Unavailable"}
                   </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      fontSize: 10,
+                      color: "#93C5FD",
+                    }}
+                  >
+                    {item.modifierGroupIds.length > 0
+                      ? `${item.modifierGroupIds.length} modifier group(s)`
+                      : "No modifiers"}
+                  </div>
                 </button>
               )
             )}
@@ -688,6 +781,96 @@ export default function MenuManagement({
                   ? "✓ Available"
                   : "Unavailable"}
               </button>
+
+              <label style={labelStyle}>
+                Assigned Modifier Groups
+              </label>
+
+              <div
+                style={{
+                  color: "#94A3B8",
+                  fontSize: 11,
+                  marginBottom: 8,
+                  lineHeight: 1.4,
+                }}
+              >
+                Select the first modifier group(s) that should open
+                when this menu item is ordered.
+              </div>
+
+              {modifierGroups.length === 0 ? (
+                <div
+                  style={{
+                    background: "#3F2A0A",
+                    border: "1px solid #92400E",
+                    color: "#FDE68A",
+                    borderRadius: 9,
+                    padding: 10,
+                    fontSize: 12,
+                  }}
+                >
+                  No modifier groups found. Create them in
+                  Back Office / Modifiers first.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr",
+                    gap: 7,
+                    maxHeight: 220,
+                    overflowY: "auto",
+                  }}
+                >
+                  {modifierGroups.map((group) => {
+                    const assigned =
+                      selectedItem.modifierGroupIds.includes(group.id);
+
+                    return (
+                      <button
+                        key={group.id}
+                        onClick={() =>
+                          toggleModifierGroup(group.id)
+                        }
+                        style={{
+                          width: "100%",
+                          minHeight: 42,
+                          borderRadius: 8,
+                          border: assigned
+                            ? "2px solid white"
+                            : "1px solid #475569",
+                          background: assigned
+                            ? "#1D4ED8"
+                            : "#1E293B",
+                          color: "white",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "0 10px",
+                          cursor: "pointer",
+                          opacity: group.available ? 1 : 0.55,
+                        }}
+                      >
+                        <span>
+                          {assigned ? "✓ " : ""}
+                          {group.name}
+                        </span>
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: group.available
+                              ? "#86EFAC"
+                              : "#FCA5A5",
+                          }}
+                        >
+                          {group.available ? "Active" : "Off"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div
                 style={{

@@ -366,7 +366,7 @@ export default function PaymentScreen({
       <div style={headerStyle}>
         <div>
           <strong style={{ fontSize: 22 }}>Payment</strong>
-          <div style={{ color: "#94A3B8", marginTop: 4 }}>
+          <div style={{ color: "#94A3B8", marginTop: 2 }}>
             {tableName}
           </div>
         </div>
@@ -377,330 +377,291 @@ export default function PaymentScreen({
       </div>
 
       <div style={layoutStyle}>
+        {/* LEFT: BILLS */}
         <div style={panelStyle}>
-          <h3 style={{ marginTop: 0 }}>Bills</h3>
+          <h3 style={panelTitleStyle}>Bills</h3>
+          <div style={panelScrollStyle}>
+            {bills.map((bill) => {
+              const remaining = remainingForBill(bill);
+              const paid = remaining === 0;
 
-          {bills.map((bill) => {
-            const remaining = remainingForBill(bill);
-            const paid = remaining === 0;
-
-            return (
-              <button
-                key={bill.id}
-                onClick={() => selectBill(bill.id)}
-                style={{
-                  width: "100%",
-                  minHeight: 80,
-                  borderRadius: 10,
-                  border:
-                    selectedBillId === bill.id
-                      ? "3px solid white"
-                      : "1px solid #475569",
-                  background: paid
-                    ? "#14532D"
-                    : selectedBillId === bill.id
-                    ? "#1D4ED8"
-                    : "#1E293B",
-                  color: "white",
-                  marginBottom: 9,
-                  padding: 10,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <div style={spaceBetween}>
-                  <strong>{bill.name}</strong>
-                  <strong>{money(billGrandTotal(bill))}</strong>
-                </div>
-
-                <div
+              return (
+                <button
+                  key={bill.id}
+                  onClick={() => selectBill(bill.id)}
                   style={{
-                    marginTop: 8,
-                    color: paid ? "#BBF7D0" : "#CBD5E1",
-                    fontSize: 12,
+                    width: "100%",
+                    minHeight: 66,
+                    borderRadius: 10,
+                    border:
+                      selectedBillId === bill.id
+                        ? "3px solid white"
+                        : "1px solid #475569",
+                    background: paid
+                      ? "#14532D"
+                      : selectedBillId === bill.id
+                      ? "#1D4ED8"
+                      : "#1E293B",
+                    color: "white",
+                    marginBottom: 8,
+                    padding: 9,
+                    cursor: "pointer",
+                    textAlign: "left",
                   }}
                 >
-                  {paid
-                    ? "✓ PAID"
-                    : `Remaining ${money(remaining)}`}
-                </div>
-              </button>
-            );
-          })}
+                  <div style={spaceBetween}>
+                    <strong>{bill.name}</strong>
+                    <strong>{money(billGrandTotal(bill))}</strong>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color: paid ? "#BBF7D0" : "#CBD5E1",
+                      fontSize: 11,
+                    }}
+                  >
+                    {paid ? "✓ PAID" : `Remaining ${money(remaining)}`}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
+        {/* CENTER: EVERYTHING NEEDED TO TAKE PAYMENT */}
         <div style={panelStyle}>
           {!selectedBill ? (
             <div style={emptyStyle}>No bill selected</div>
           ) : (
-            <>
-              <h2 style={{ marginTop: 0 }}>{selectedBill.name}</h2>
-
-              <SummaryRow
-                label="Subtotal"
-                cents={selectedBill.subtotalCents}
-              />
-              <SummaryRow
-                label="Tax"
-                cents={selectedBill.taxCents}
-              />
-              <SummaryRow
-                label="Gratuity"
-                cents={billGratuity(selectedBill.id)}
-              />
-              <SummaryRow
-                label="Tip"
-                cents={billTip(selectedBill.id)}
-              />
-              <SummaryRow
-                label="Bill Total"
-                cents={billGrandTotal(selectedBill)}
-                bold
-              />
-              <SummaryRow
-                label="Paid"
-                cents={paidForBill(selectedBill.id)}
-              />
-              <SummaryRow
-                label="Remaining"
-                cents={selectedRemaining}
-                bold
-              />
-
-              <div style={dividerStyle} />
-
-              <h3>Gratuity</h3>
-
-              <div style={buttonGrid}>
-                {[18, 20, 22].map((percent) => (
-                  <button
-                    key={percent}
-                    onClick={() =>
-                      applyGratuityPercent(percent)
-                    }
-                    style={smallActionButton}
-                  >
-                    {percent}%
-                  </button>
-                ))}
-
-                <button
-                  onClick={clearGratuity}
-                  style={smallActionButton}
-                >
-                  None
-                </button>
+            <div style={centerContentStyle}>
+              <div style={summaryGridStyle}>
+                <div style={summaryMiniStyle}>
+                  <span>Subtotal</span>
+                  <strong>{money(selectedBill.subtotalCents)}</strong>
+                </div>
+                <div style={summaryMiniStyle}>
+                  <span>Tax</span>
+                  <strong>{money(selectedBill.taxCents)}</strong>
+                </div>
+                <div style={summaryMiniStyle}>
+                  <span>Gratuity</span>
+                  <strong>{money(billGratuity(selectedBill.id))}</strong>
+                </div>
+                <div style={summaryMiniStyle}>
+                  <span>Tip</span>
+                  <strong>{money(billTip(selectedBill.id))}</strong>
+                </div>
+                <div style={{ ...summaryMiniStyle, borderColor: "#2563EB" }}>
+                  <span>Bill Total</span>
+                  <strong>{money(billGrandTotal(selectedBill))}</strong>
+                </div>
+                <div style={{ ...summaryMiniStyle, borderColor: "#16A34A" }}>
+                  <span>Remaining</span>
+                  <strong>{money(selectedRemaining)}</strong>
+                </div>
               </div>
 
-              <div style={customRow}>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Custom %"
-                  value={customGratuityPercent}
-                  onChange={(event) =>
-                    setCustomGratuityPercent(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-                <button
-                  onClick={() =>
-                    applyGratuityPercent(
-                      Number(customGratuityPercent)
-                    )
-                  }
-                  style={applyButton}
-                >
-                  Apply %
-                </button>
+              <div style={adjustmentGridStyle}>
+                <div style={compactCardStyle}>
+                  <div style={compactHeadingStyle}>Gratuity</div>
+
+                  <div style={buttonGrid}>
+                    {[18, 20, 22].map((percent) => (
+                      <button
+                        key={percent}
+                        onClick={() => applyGratuityPercent(percent)}
+                        style={smallActionButton}
+                      >
+                        {percent}%
+                      </button>
+                    ))}
+                    <button onClick={clearGratuity} style={smallActionButton}>
+                      None
+                    </button>
+                  </div>
+
+                  <div style={inlineCustomGridStyle}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Custom %"
+                      value={customGratuityPercent}
+                      onChange={(event) =>
+                        setCustomGratuityPercent(event.target.value)
+                      }
+                      style={inputStyle}
+                    />
+                    <button
+                      onClick={() =>
+                        applyGratuityPercent(Number(customGratuityPercent))
+                      }
+                      style={applyButton}
+                    >
+                      %
+                    </button>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="$ Amount"
+                      value={customGratuityAmount}
+                      onChange={(event) =>
+                        setCustomGratuityAmount(event.target.value)
+                      }
+                      style={inputStyle}
+                    />
+                    <button
+                      onClick={applyGratuityAmount}
+                      style={{ ...applyButton, background: "#7C3AED" }}
+                    >
+                      $
+                    </button>
+                  </div>
+                </div>
+
+                <div style={compactCardStyle}>
+                  <div style={compactHeadingStyle}>Tip</div>
+
+                  <div style={buttonGrid}>
+                    {[15, 18, 20].map((percent) => (
+                      <button
+                        key={percent}
+                        onClick={() => applyTipPercent(percent)}
+                        style={smallActionButton}
+                      >
+                        {percent}%
+                      </button>
+                    ))}
+                    <button onClick={clearTip} style={smallActionButton}>
+                      No Tip
+                    </button>
+                  </div>
+
+                  <div style={inlineCustomGridStyle}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Custom %"
+                      value={customTipPercent}
+                      onChange={(event) =>
+                        setCustomTipPercent(event.target.value)
+                      }
+                      style={inputStyle}
+                    />
+                    <button
+                      onClick={() =>
+                        applyTipPercent(Number(customTipPercent))
+                      }
+                      style={applyButton}
+                    >
+                      %
+                    </button>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="$ Amount"
+                      value={customTipAmount}
+                      onChange={(event) =>
+                        setCustomTipAmount(event.target.value)
+                      }
+                      style={inputStyle}
+                    />
+                    <button
+                      onClick={applyTipAmount}
+                      style={{ ...applyButton, background: "#7C3AED" }}
+                    >
+                      $
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div style={customRow}>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="$ Amount"
-                  value={customGratuityAmount}
-                  onChange={(event) =>
-                    setCustomGratuityAmount(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-                <button
-                  onClick={applyGratuityAmount}
-                  style={{
-                    ...applyButton,
-                    background: "#7C3AED",
-                  }}
-                >
-                  Apply $
-                </button>
-              </div>
+              <div style={paymentCardStyle}>
+                <div style={paymentTopRowStyle}>
+                  <strong style={{ fontSize: 18 }}>Payment Method</strong>
+                  <span style={{ color: "#94A3B8", fontSize: 12 }}>
+                    {selectedBill.name}
+                  </span>
+                </div>
 
-              <h3>Tip</h3>
+                <div style={paymentMethodGrid}>
+                  {paymentMethods.map((method) => (
+                    <button
+                      key={method}
+                      onClick={() => setSelectedMethod(method)}
+                      style={{
+                        minHeight: 42,
+                        borderRadius: 8,
+                        border:
+                          selectedMethod === method
+                            ? "3px solid white"
+                            : "1px solid #475569",
+                        background:
+                          selectedMethod === method
+                            ? "#2563EB"
+                            : "#1E293B",
+                        color: "white",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
 
-              <div style={buttonGrid}>
-                {[15, 18, 20].map((percent) => (
-                  <button
-                    key={percent}
-                    onClick={() => applyTipPercent(percent)}
-                    style={smallActionButton}
-                  >
-                    {percent}%
-                  </button>
-                ))}
-
-                <button
-                  onClick={clearTip}
-                  style={smallActionButton}
-                >
-                  No Tip
-                </button>
-              </div>
-
-              <div style={customRow}>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Custom %"
-                  value={customTipPercent}
-                  onChange={(event) =>
-                    setCustomTipPercent(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-                <button
-                  onClick={() =>
-                    applyTipPercent(Number(customTipPercent))
-                  }
-                  style={applyButton}
-                >
-                  Apply %
-                </button>
-              </div>
-
-              <div style={customRow}>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="$ Amount"
-                  value={customTipAmount}
-                  onChange={(event) =>
-                    setCustomTipAmount(event.target.value)
-                  }
-                  style={inputStyle}
-                />
-                <button
-                  onClick={applyTipAmount}
-                  style={{
-                    ...applyButton,
-                    background: "#7C3AED",
-                  }}
-                >
-                  Apply $
-                </button>
-              </div>
-
-              <div style={dividerStyle} />
-
-              <h3>Payment Method</h3>
-
-              <div style={paymentMethodGrid}>
-                {paymentMethods.map((method) => (
-                  <button
-                    key={method}
-                    onClick={() => setSelectedMethod(method)}
+                <div style={amountRowStyle}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
                     style={{
-                      minHeight: 52,
-                      borderRadius: 9,
-                      border:
-                        selectedMethod === method
-                          ? "3px solid white"
-                          : "1px solid #475569",
-                      background:
-                        selectedMethod === method
-                          ? "#2563EB"
-                          : "#1E293B",
-                      color: "white",
+                      ...inputStyle,
+                      fontSize: 18,
                       fontWeight: "bold",
-                      cursor: "pointer",
                     }}
-                  >
-                    {method}
+                  />
+                  <button onClick={payRemaining} style={remainingButtonStyle}>
+                    Remaining {money(selectedRemaining)}
                   </button>
-                ))}
-              </div>
+                </div>
 
-              <h3>Amount</h3>
-
-              <div style={customRow}>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={paymentAmount}
-                  onChange={(event) =>
-                    setPaymentAmount(event.target.value)
-                  }
-                  style={{
-                    ...inputStyle,
-                    fontSize: 20,
-                    fontWeight: "bold",
-                  }}
-                />
                 <button
-                  onClick={payRemaining}
+                  onClick={addPayment}
+                  disabled={selectedRemaining === 0}
                   style={{
-                    ...applyButton,
-                    minWidth: 110,
+                    width: "100%",
+                    height: 50,
+                    border: "none",
+                    borderRadius: 10,
+                    background:
+                      selectedRemaining > 0 ? "#22C55E" : "#475569",
+                    color: "white",
+                    fontWeight: "bold",
+                    fontSize: 16,
+                    cursor:
+                      selectedRemaining > 0 ? "pointer" : "not-allowed",
                   }}
                 >
-                  Remaining
+                  Add {selectedMethod} Payment
                 </button>
               </div>
-
-              <button
-                onClick={addPayment}
-                disabled={selectedRemaining === 0}
-                style={{
-                  width: "100%",
-                  height: 58,
-                  marginTop: 12,
-                  border: "none",
-                  borderRadius: 10,
-                  background:
-                    selectedRemaining > 0
-                      ? "#22C55E"
-                      : "#475569",
-                  color: "white",
-                  fontWeight: "bold",
-                  fontSize: 17,
-                  cursor:
-                    selectedRemaining > 0
-                      ? "pointer"
-                      : "not-allowed",
-                }}
-              >
-                Add {selectedMethod} Payment
-              </button>
-            </>
+            </div>
           )}
         </div>
 
-        <div
-          style={{
-            ...panelStyle,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>Payment History</h3>
+        {/* RIGHT: HISTORY + ORDER TOTALS */}
+        <div style={panelStyle}>
+          <h3 style={panelTitleStyle}>Payment History</h3>
 
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={historyScrollStyle}>
             {selectedBill &&
               billPayments(selectedBill.id).length === 0 && (
                 <div style={emptyStyle}>No payments yet</div>
@@ -716,11 +677,7 @@ export default function PaymentScreen({
                       <strong>{payment.method}</strong>
                       <strong>{money(payment.amountCents)}</strong>
                     </div>
-
-                    <div style={historyTime}>
-                      {payment.createdAt}
-                    </div>
-
+                    <div style={historyTime}>{payment.createdAt}</div>
                     <button
                       onClick={() => removePayment(payment.id)}
                       style={removeButton}
@@ -731,49 +688,38 @@ export default function PaymentScreen({
                 ))}
           </div>
 
-          <div style={dividerStyle} />
+          <div style={rightFooterStyle}>
+            <SummaryRow label="Order" cents={totalBase} />
+            <SummaryRow label="Gratuity" cents={totalGratuity} />
+            <SummaryRow label="Tip" cents={totalTip} />
+            <SummaryRow label="Grand Total" cents={grandTotal} bold />
+            <SummaryRow label="Paid" cents={totalPaid} />
+            <SummaryRow label="Remaining" cents={totalRemaining} bold />
 
-          <SummaryRow label="Order" cents={totalBase} />
-          <SummaryRow label="Gratuity" cents={totalGratuity} />
-          <SummaryRow label="Tip" cents={totalTip} />
-          <SummaryRow
-            label="Grand Total"
-            cents={grandTotal}
-            bold
-          />
-          <SummaryRow label="Paid" cents={totalPaid} />
-          <SummaryRow
-            label="Remaining"
-            cents={totalRemaining}
-            bold
-          />
-
-          <button
-            onClick={() => {
-              if (!allBillsPaid) {
-                alert("All bills must be fully paid first.");
-                return;
-              }
-
-              onAllPaid();
-            }}
-            style={{
-              width: "100%",
-              height: 58,
-              border: "none",
-              borderRadius: 10,
-              background: allBillsPaid ? "#16A34A" : "#475569",
-              color: "white",
-              fontWeight: "bold",
-              fontSize: 17,
-              marginTop: 15,
-              cursor: allBillsPaid ? "pointer" : "not-allowed",
-            }}
-          >
-            {allBillsPaid
-              ? "✓ Complete Order"
-              : "Complete All Payments"}
-          </button>
+            <button
+              onClick={() => {
+                if (!allBillsPaid) {
+                  alert("All bills must be fully paid first.");
+                  return;
+                }
+                onAllPaid();
+              }}
+              style={{
+                width: "100%",
+                height: 50,
+                border: "none",
+                borderRadius: 10,
+                background: allBillsPaid ? "#16A34A" : "#475569",
+                color: "white",
+                fontWeight: "bold",
+                fontSize: 16,
+                marginTop: 8,
+                cursor: allBillsPaid ? "pointer" : "not-allowed",
+              }}
+            >
+              {allBillsPaid ? "✓ Complete Order" : "Complete All Payments"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -807,7 +753,9 @@ function SummaryRow({
 }
 
 const pageStyle = {
-  minHeight: "100vh",
+  height: "100vh",
+  maxHeight: "100vh",
+  overflow: "hidden",
   background: "#0F172A",
   color: "white",
   fontFamily: "Arial, sans-serif",
@@ -816,28 +764,163 @@ const pageStyle = {
 };
 
 const headerStyle = {
+  flex: "0 0 auto",
   background: "#020617",
-  padding: "14px 20px",
+  padding: "8px 14px",
+  minHeight: 54,
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   gap: 12,
-  flexWrap: "wrap" as const,
 };
 
 const layoutStyle = {
-  display: "grid",
-  gridTemplateColumns: "280px minmax(340px, 1fr) 350px",
-  gap: 12,
-  padding: 12,
   flex: 1,
+  minHeight: 0,
+  display: "grid",
+  gridTemplateColumns: "210px minmax(560px, 1fr) 300px",
+  gap: 8,
+  padding: 8,
+  overflow: "hidden",
 };
 
 const panelStyle = {
+  minHeight: 0,
+  overflow: "hidden",
   background: "#111827",
   border: "1px solid #334155",
-  borderRadius: 14,
-  padding: 15,
+  borderRadius: 12,
+  padding: 10,
+  display: "flex",
+  flexDirection: "column" as const,
+};
+
+const panelTitleStyle = {
+  margin: "0 0 8px 0",
+  paddingBottom: 7,
+  borderBottom: "1px solid #334155",
+  textAlign: "center" as const,
+};
+
+const panelScrollStyle = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: "auto" as const,
+};
+
+const centerContentStyle = {
+  flex: 1,
+  minHeight: 0,
+  display: "grid",
+  gridTemplateRows: "auto auto 1fr",
+  gap: 8,
+  overflow: "hidden",
+};
+
+const summaryGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+  gap: 6,
+};
+
+const summaryMiniStyle = {
+  background: "#0F172A",
+  border: "1px solid #334155",
+  borderRadius: 8,
+  padding: "7px 8px",
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: 3,
+  fontSize: 12,
+};
+
+const adjustmentGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+};
+
+const compactCardStyle = {
+  background: "#0F172A",
+  border: "1px solid #334155",
+  borderRadius: 10,
+  padding: 8,
+};
+
+const compactHeadingStyle = {
+  fontSize: 16,
+  fontWeight: "bold" as const,
+  textAlign: "center" as const,
+  marginBottom: 6,
+};
+
+const buttonGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: 5,
+};
+
+const inlineCustomGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "1fr 42px 1fr 42px",
+  gap: 5,
+  marginTop: 6,
+};
+
+const paymentCardStyle = {
+  minHeight: 0,
+  background: "#0F172A",
+  border: "1px solid #334155",
+  borderRadius: 10,
+  padding: 8,
+  display: "flex",
+  flexDirection: "column" as const,
+  justifyContent: "space-between",
+  gap: 7,
+};
+
+const paymentTopRowStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 8,
+};
+
+const paymentMethodGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, 1fr)",
+  gap: 6,
+};
+
+const amountRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 6,
+};
+
+const remainingButtonStyle = {
+  minHeight: 40,
+  border: "none",
+  borderRadius: 8,
+  background: "#2563EB",
+  color: "white",
+  padding: "0 12px",
+  fontWeight: "bold" as const,
+  cursor: "pointer",
+  whiteSpace: "nowrap" as const,
+};
+
+const historyScrollStyle = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: "auto" as const,
+};
+
+const rightFooterStyle = {
+  flex: "0 0 auto",
+  borderTop: "1px solid #334155",
+  paddingTop: 7,
+  marginTop: 7,
 };
 
 const topButton = {
@@ -845,62 +928,40 @@ const topButton = {
   color: "white",
   border: "none",
   borderRadius: 8,
-  padding: "10px 14px",
+  padding: "8px 12px",
   fontWeight: "bold" as const,
   cursor: "pointer",
 };
 
-const dividerStyle = {
-  borderTop: "1px solid #334155",
-  margin: "18px 0",
-};
-
-const buttonGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, 1fr)",
-  gap: 8,
-};
-
-const paymentMethodGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, 1fr)",
-  gap: 8,
-};
-
-const customRow = {
-  display: "flex",
-  gap: 8,
-  marginTop: 8,
-};
-
 const smallActionButton = {
-  minHeight: 42,
+  minHeight: 34,
   border: "1px solid #475569",
-  borderRadius: 8,
+  borderRadius: 7,
   background: "#1E293B",
   color: "white",
   fontWeight: "bold" as const,
   cursor: "pointer",
+  fontSize: 12,
 };
 
 const inputStyle = {
   width: "100%",
   boxSizing: "border-box" as const,
-  minHeight: 45,
-  padding: "0 10px",
+  minHeight: 36,
+  padding: "0 8px",
   background: "#020617",
   color: "white",
   border: "1px solid #475569",
-  borderRadius: 8,
+  borderRadius: 7,
 };
 
 const applyButton = {
-  minHeight: 45,
+  minHeight: 36,
   border: "none",
-  borderRadius: 8,
+  borderRadius: 7,
   background: "#2563EB",
   color: "white",
-  padding: "0 15px",
+  padding: "0 8px",
   fontWeight: "bold" as const,
   cursor: "pointer",
 };
@@ -914,29 +975,30 @@ const spaceBetween = {
 const emptyStyle = {
   color: "#64748B",
   textAlign: "center" as const,
-  padding: 25,
+  padding: 20,
 };
 
 const historyCard = {
   background: "#1E293B",
-  borderRadius: 9,
-  padding: 10,
-  marginBottom: 8,
+  borderRadius: 8,
+  padding: 8,
+  marginBottom: 6,
 };
 
 const historyTime = {
   color: "#94A3B8",
-  fontSize: 11,
-  marginTop: 5,
+  fontSize: 10,
+  marginTop: 4,
 };
 
 const removeButton = {
   width: "100%",
-  marginTop: 8,
-  minHeight: 34,
+  marginTop: 5,
+  minHeight: 28,
   border: "1px solid #DC2626",
-  borderRadius: 7,
+  borderRadius: 6,
   background: "#450A0A",
   color: "#FCA5A5",
   cursor: "pointer",
 };
+
