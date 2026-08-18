@@ -13,15 +13,36 @@ type MenuItem = {
   id: string;
   name: string;
   category: string;
+  mainCategoryId: string;
+  subcategoryId: string;
   price: number;
   available: boolean;
   modifierGroupIds: string[];
 };
 
+type SubcategoryRecord = {
+  id: string;
+  name: string;
+  order: number;
+  available: boolean;
+};
+
+type CategoryRecord = {
+  id: string;
+  name: string;
+  order: number;
+  available: boolean;
+  subcategories: SubcategoryRecord[];
+};
+
+type ModifierInputType = "single" | "multi" | "number" | "text";
+type PriceMode = "add" | "replace";
+
 type ModifierOption = {
   id: string;
   name: string;
   priceDelta: number;
+  priceMode: PriceMode;
   available: boolean;
   nextGroupIds: string[];
 };
@@ -29,10 +50,24 @@ type ModifierOption = {
 type ModifierGroup = {
   id: string;
   name: string;
+  inputType: ModifierInputType;
   required: boolean;
   minSelect: number;
   maxSelect: number;
   available: boolean;
+
+  numberMin: number;
+  numberMax: number;
+  numberStep: number;
+  numberDefault: number;
+  unitLabel: string;
+  numberPricePerUnit: number;
+  numberPriceMode: PriceMode;
+
+  textPlaceholder: string;
+  textDefault: string;
+  textMaxLength: number;
+
   options: ModifierOption[];
 };
 
@@ -42,6 +77,9 @@ type SelectedModifier = {
   optionId: string;
   optionName: string;
   priceDelta: number;
+  priceMode: PriceMode;
+  inputType: ModifierInputType;
+  inputValue?: string;
 };
 
 type TicketItem = {
@@ -49,6 +87,7 @@ type TicketItem = {
   menuItemId: string;
   name: string;
   price: number;
+  basePrice: number;
   qty: number;
 
   // Service / seat assignment
@@ -67,18 +106,30 @@ type TicketItem = {
   selectedModifiers: SelectedModifier[];
 };
 
+type KitchenEventType =
+  | "NEW"
+  | "UPDATE"
+  | "CANCEL"
+  | "REFIRE";
+
 type KitchenBatchItem = {
   lineId: string;
   name: string;
   guest: SeatSelection;
   qty: number;
   modifiers: string[];
+
+  // Used by UPDATE events so Kitchen History never loses
+  // what was originally sent.
+  previousModifiers?: string[];
+  reason?: string;
 };
 
 type KitchenBatch = {
   id: string;
   orderId: string;
   createdAt: string;
+  eventType: KitchenEventType;
   items: KitchenBatchItem[];
 };
 
@@ -104,21 +155,59 @@ type OrderScreenProps = {
 
 const MENU_STORAGE_KEY = "behesht-menu-items";
 const MODIFIER_STORAGE_KEY = "behesht-modifier-groups";
+const CATEGORY_STORAGE_KEY = "behesht-menu-categories";
 
 const defaultMenuItems: MenuItem[] = [
-  { id: "1", name: "Koobideh", category: "Kebab", price: 19.99, available: true, modifierGroupIds: [] },
-  { id: "2", name: "Joojeh", category: "Kebab", price: 21.99, available: true, modifierGroupIds: [] },
-  { id: "3", name: "Vaziri", category: "Kebab", price: 27.99, available: true, modifierGroupIds: [] },
-  { id: "4", name: "Shirazi Salad", category: "Salad", price: 8.99, available: true, modifierGroupIds: [] },
-  { id: "5", name: "Caesar Salad", category: "Salad", price: 12.99, available: true, modifierGroupIds: [] },
-  { id: "6", name: "Kashk Bademjan", category: "Appetizer", price: 13.99, available: true, modifierGroupIds: [] },
-  { id: "7", name: "Hummus", category: "Appetizer", price: 9.99, available: true, modifierGroupIds: [] },
-  { id: "8", name: "Tea", category: "Drinks", price: 4.99, available: true, modifierGroupIds: [] },
-  { id: "9", name: "Coke", category: "Drinks", price: 3.99, available: true, modifierGroupIds: [] },
-  { id: "10", name: "Water", category: "Drinks", price: 2.99, available: true, modifierGroupIds: [] },
-  { id: "11", name: "Classic Hookah", category: "Hookah", price: 29.99, available: true, modifierGroupIds: [] },
-  { id: "12", name: "Premium Hookah", category: "Hookah", price: 39.99, available: true, modifierGroupIds: [] },
+  { id: "1", name: "Koobideh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 19.99, available: true, modifierGroupIds: [] },
+  { id: "2", name: "Joojeh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 21.99, available: true, modifierGroupIds: [] },
+  { id: "3", name: "Vaziri", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 27.99, available: true, modifierGroupIds: [] },
+  { id: "4", name: "Shirazi Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 8.99, available: true, modifierGroupIds: [] },
+  { id: "5", name: "Caesar Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 12.99, available: true, modifierGroupIds: [] },
+  { id: "6", name: "Kashk Bademjan", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 13.99, available: true, modifierGroupIds: [] },
+  { id: "7", name: "Hummus", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 9.99, available: true, modifierGroupIds: [] },
+  { id: "8", name: "Tea", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 4.99, available: true, modifierGroupIds: [] },
+  { id: "9", name: "Coke", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 3.99, available: true, modifierGroupIds: [] },
+  { id: "10", name: "Water", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 2.99, available: true, modifierGroupIds: [] },
+  { id: "11", name: "Classic Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 29.99, available: true, modifierGroupIds: [] },
+  { id: "12", name: "Premium Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 39.99, available: true, modifierGroupIds: [] },
 ];
+
+function loadMenuCategories(): CategoryRecord[] {
+  const saved = localStorage.getItem(CATEGORY_STORAGE_KEY);
+
+  if (!saved) {
+    return [
+      { id: "cat-kebab", name: "Kebab", order: 1, available: true, subcategories: [] },
+      { id: "cat-salad", name: "Salad", order: 2, available: true, subcategories: [] },
+      { id: "cat-appetizer", name: "Appetizer", order: 3, available: true, subcategories: [] },
+      { id: "cat-drinks", name: "Drinks", order: 4, available: true, subcategories: [] },
+      { id: "cat-hookah", name: "Hookah", order: 5, available: true, subcategories: [] },
+      { id: "cat-other", name: "Other", order: 99, available: true, subcategories: [] },
+    ];
+  }
+
+  try {
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((category: any) => ({
+      id: String(category.id),
+      name: String(category.name ?? "Category"),
+      order: Number(category.order ?? 0),
+      available: category.available === undefined ? true : Boolean(category.available),
+      subcategories: Array.isArray(category.subcategories)
+        ? category.subcategories.map((subcategory: any) => ({
+            id: String(subcategory.id),
+            name: String(subcategory.name ?? "Subcategory"),
+            order: Number(subcategory.order ?? 0),
+            available: subcategory.available === undefined ? true : Boolean(subcategory.available),
+          }))
+        : [],
+    }));
+  } catch {
+    return [];
+  }
+}
 
 function loadMenuItems(): MenuItem[] {
   const saved = localStorage.getItem(MENU_STORAGE_KEY);
@@ -138,6 +227,8 @@ function loadMenuItems(): MenuItem[] {
       id: String(item.id),
       name: String(item.name ?? "Item"),
       category: String(item.category ?? "Other"),
+      mainCategoryId: String(item.mainCategoryId ?? ""),
+      subcategoryId: String(item.subcategoryId ?? ""),
       price: Number(item.price ?? 0),
       available:
         item.available === undefined
@@ -162,31 +253,57 @@ function loadModifierGroups(): ModifierGroup[] {
 
     if (!Array.isArray(parsed)) return [];
 
-    return parsed.map((group) => ({
-      id: String(group.id),
-      name: String(group.name ?? "Modifier Group"),
-      required: Boolean(group.required),
-      minSelect: Math.max(0, Number(group.minSelect ?? 0)),
-      maxSelect: Math.max(1, Number(group.maxSelect ?? 1)),
-      available:
-        group.available === undefined
-          ? true
-          : Boolean(group.available),
-      options: Array.isArray(group.options)
-        ? group.options.map((option: any) => ({
-            id: String(option.id),
-            name: String(option.name ?? "Option"),
-            priceDelta: Number(option.priceDelta ?? 0),
-            available:
-              option.available === undefined
-                ? true
-                : Boolean(option.available),
-            nextGroupIds: Array.isArray(option.nextGroupIds)
-              ? option.nextGroupIds.map(String)
-              : [],
-          }))
-        : [],
-    }));
+    return parsed.map((group) => {
+      const inputType: ModifierInputType =
+        group.inputType === "multi" ||
+        group.inputType === "number" ||
+        group.inputType === "text"
+          ? group.inputType
+          : "single";
+
+      return {
+        id: String(group.id),
+        name: String(group.name ?? "Modifier Group"),
+        inputType,
+        required: Boolean(group.required),
+        minSelect: Math.max(0, Number(group.minSelect ?? 0)),
+        maxSelect: Math.max(1, Number(group.maxSelect ?? 1)),
+        available:
+          group.available === undefined
+            ? true
+            : Boolean(group.available),
+
+        numberMin: Number(group.numberMin ?? 1),
+        numberMax: Number(group.numberMax ?? 12),
+        numberStep: Math.max(0.01, Number(group.numberStep ?? 1)),
+        numberDefault: Number(group.numberDefault ?? group.numberMin ?? 1),
+        unitLabel: String(group.unitLabel ?? ""),
+        numberPricePerUnit: Number(group.numberPricePerUnit ?? 0),
+        numberPriceMode:
+          group.numberPriceMode === "replace" ? "replace" : "add",
+
+        textPlaceholder: String(group.textPlaceholder ?? ""),
+        textDefault: String(group.textDefault ?? ""),
+        textMaxLength: Math.max(1, Number(group.textMaxLength ?? 80)),
+
+        options: Array.isArray(group.options)
+          ? group.options.map((option: any) => ({
+              id: String(option.id),
+              name: String(option.name ?? "Option"),
+              priceDelta: Number(option.priceDelta ?? 0),
+              priceMode:
+                option.priceMode === "replace" ? "replace" : "add",
+              available:
+                option.available === undefined
+                  ? true
+                  : Boolean(option.available),
+              nextGroupIds: Array.isArray(option.nextGroupIds)
+                ? option.nextGroupIds.map(String)
+                : [],
+            }))
+          : [],
+      };
+    });
   } catch {
     return [];
   }
@@ -214,6 +331,64 @@ function loadArray<T>(key: string): T[] {
   }
 }
 
+function loadKitchenHistory(
+  key: string
+): KitchenBatch[] {
+  const saved = loadArray<any>(key);
+
+  return saved.map((batch, batchIndex) => ({
+    id:
+      String(
+        batch.id ??
+          `kitchen-old-${batchIndex}`
+      ),
+    orderId: String(batch.orderId ?? ""),
+    createdAt: String(
+      batch.createdAt ??
+        new Date().toLocaleString()
+    ),
+
+    // Existing history created before this engine is a NEW event.
+    eventType:
+      batch.eventType === "UPDATE" ||
+      batch.eventType === "CANCEL" ||
+      batch.eventType === "REFIRE"
+        ? batch.eventType
+        : "NEW",
+
+    items: Array.isArray(batch.items)
+      ? batch.items.map(
+          (item: any, itemIndex: number) => ({
+            lineId: String(
+              item.lineId ??
+                `old-line-${itemIndex}`
+            ),
+            name: String(item.name ?? "Item"),
+            guest:
+              item.guest === "shared"
+                ? "shared"
+                : Number(item.guest ?? 1),
+            qty: Number(item.qty ?? 1),
+            modifiers: Array.isArray(
+              item.modifiers
+            )
+              ? item.modifiers.map(String)
+              : [],
+            previousModifiers: Array.isArray(
+              item.previousModifiers
+            )
+              ? item.previousModifiers.map(String)
+              : undefined,
+            reason:
+              item.reason === undefined
+                ? undefined
+                : String(item.reason),
+          })
+        )
+      : [],
+  }));
+}
+
 function loadTicket(key: string): TicketItem[] {
   const saved = loadArray<any>(key);
 
@@ -230,6 +405,23 @@ function loadTicket(key: string): TicketItem[] {
     name: item.name ?? "Item",
 
     price: Number(item.price ?? 0),
+
+    basePrice: Number(
+      item.basePrice ??
+        (
+          Number(item.price ?? 0) -
+          (Array.isArray(item.selectedModifiers)
+            ? item.selectedModifiers.reduce(
+                (sum: number, modifier: any) =>
+                  sum +
+                  (modifier.priceMode === "replace"
+                    ? 0
+                    : Number(modifier.priceDelta ?? 0)),
+                0
+              )
+            : 0)
+        )
+    ),
 
     qty: Number(item.qty ?? 1),
 
@@ -263,6 +455,18 @@ function loadTicket(key: string): TicketItem[] {
           optionId: String(modifier.optionId ?? ""),
           optionName: String(modifier.optionName ?? "Option"),
           priceDelta: Number(modifier.priceDelta ?? 0),
+          priceMode:
+            modifier.priceMode === "replace" ? "replace" : "add",
+          inputType:
+            modifier.inputType === "multi" ||
+            modifier.inputType === "number" ||
+            modifier.inputType === "text"
+              ? modifier.inputType
+              : "single",
+          inputValue:
+            modifier.inputValue === undefined
+              ? undefined
+              : String(modifier.inputValue),
         }))
       : [],
   }));
@@ -283,6 +487,9 @@ export default function OrderScreen({
   const [menuItems, setMenuItems] =
     useState<MenuItem[]>(loadMenuItems);
 
+  const [menuCategories, setMenuCategories] =
+    useState<CategoryRecord[]>(loadMenuCategories);
+
   const [modifierGroups, setModifierGroups] =
     useState<ModifierGroup[]>(loadModifierGroups);
 
@@ -298,15 +505,39 @@ export default function OrderScreen({
   const [modifierSelections, setModifierSelections] =
     useState<Record<string, string[]>>({});
 
+  const [modifierInputValues, setModifierInputValues] =
+    useState<Record<string, string>>({});
+
   const [editingModifierLineId, setEditingModifierLineId] =
     useState<string | null>(null);
 
   const [editingModifierBasePrice, setEditingModifierBasePrice] =
     useState<number | null>(null);
 
+  const [
+    editingSentModifierSnapshot,
+    setEditingSentModifierSnapshot,
+  ] = useState<{
+    lineId: string;
+    name: string;
+    guest: SeatSelection;
+    qty: number;
+    modifiers: string[];
+  } | null>(null);
 
-  const [selectedCategory, setSelectedCategory] =
-    useState(() => loadMenuItems()[0]?.category ?? "Other");
+
+  const [selectedMainCategoryId, setSelectedMainCategoryId] =
+    useState(() => {
+      const firstAvailable = loadMenuCategories()
+        .slice()
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+        .find((category) => category.available);
+
+      return firstAvailable?.id ?? "";
+    });
+
+  const [selectedSubcategoryId, setSelectedSubcategoryId] =
+    useState("");
 
   const [activeSeat, setActiveSeat] =
     useState<SeatSelection>(1);
@@ -321,7 +552,7 @@ export default function OrderScreen({
 
   const [kitchenBatches, setKitchenBatches] =
     useState<KitchenBatch[]>(() =>
-      loadArray<KitchenBatch>(kitchenStorageKey)
+      loadKitchenHistory(kitchenStorageKey)
     );
 
   const [voidRecords, setVoidRecords] =
@@ -411,6 +642,7 @@ export default function OrderScreen({
   useEffect(() => {
     const refreshMenu = () => {
       setMenuItems(loadMenuItems());
+      setMenuCategories(loadMenuCategories());
       setModifierGroups(loadModifierGroups());
     };
 
@@ -423,36 +655,105 @@ export default function OrderScreen({
     };
   }, []);
 
-  const categories = useMemo(
+  const sortedMainCategories = useMemo(
     () =>
-      Array.from(
-        new Set(
-          menuItems.map(
-            (item) => item.category
-          )
-        )
-      ),
-    [menuItems]
+      menuCategories
+        .filter((category) => category.available)
+        .slice()
+        .sort(
+          (a, b) =>
+            a.order - b.order ||
+            a.name.localeCompare(b.name)
+        ),
+    [menuCategories]
+  );
+
+  const selectedMainCategory = useMemo(
+    () =>
+      sortedMainCategories.find(
+        (category) => category.id === selectedMainCategoryId
+      ) ?? null,
+    [sortedMainCategories, selectedMainCategoryId]
+  );
+
+  const visibleSubcategories = useMemo(
+    () =>
+      (selectedMainCategory?.subcategories ?? [])
+        .filter((subcategory) => subcategory.available)
+        .slice()
+        .sort(
+          (a, b) =>
+            a.order - b.order ||
+            a.name.localeCompare(b.name)
+        ),
+    [selectedMainCategory]
   );
 
   useEffect(() => {
     if (
-      categories.length > 0 &&
-      !categories.includes(selectedCategory)
+      sortedMainCategories.length > 0 &&
+      !sortedMainCategories.some(
+        (category) => category.id === selectedMainCategoryId
+      )
     ) {
-      setSelectedCategory(categories[0]);
+      setSelectedMainCategoryId(sortedMainCategories[0].id);
+      setSelectedSubcategoryId("");
     }
-  }, [categories, selectedCategory]);
+  }, [sortedMainCategories, selectedMainCategoryId]);
 
-  const filteredItems = useMemo(
-    () =>
-      menuItems.filter(
-        (item) =>
-          item.category === selectedCategory &&
-          item.available
-      ),
-    [menuItems, selectedCategory]
-  );
+  useEffect(() => {
+    if (!selectedMainCategory) {
+      setSelectedSubcategoryId("");
+      return;
+    }
+
+    if (visibleSubcategories.length === 0) {
+      if (selectedSubcategoryId !== "") {
+        setSelectedSubcategoryId("");
+      }
+      return;
+    }
+
+    if (
+      selectedSubcategoryId &&
+      !visibleSubcategories.some(
+        (subcategory) => subcategory.id === selectedSubcategoryId
+      )
+    ) {
+      setSelectedSubcategoryId("");
+    }
+  }, [selectedMainCategory, visibleSubcategories, selectedSubcategoryId]);
+
+  const filteredItems = useMemo(() => {
+    if (!selectedMainCategory) return [];
+
+    return menuItems.filter((item) => {
+      if (!item.available) return false;
+
+      if (item.mainCategoryId) {
+        if (item.mainCategoryId !== selectedMainCategory.id) {
+          return false;
+        }
+
+        if (visibleSubcategories.length > 0) {
+          if (!selectedSubcategoryId) return false;
+          return item.subcategoryId === selectedSubcategoryId;
+        }
+
+        return !item.subcategoryId;
+      }
+
+      return (
+        item.category === selectedMainCategory.name &&
+        visibleSubcategories.length === 0
+      );
+    });
+  }, [menuItems, selectedMainCategory, selectedSubcategoryId, visibleSubcategories.length]);
+
+  const selectedSubcategory =
+    visibleSubcategories.find(
+      (subcategory) => subcategory.id === selectedSubcategoryId
+    ) ?? null;
 
   const subtotal = ticket.reduce(
     (sum, item) => {
@@ -489,6 +790,84 @@ export default function OrderScreen({
       { length: serviceGuests },
       (_, index) => index + 1
     );
+
+  const kitchenModifierLines = (
+    modifiers: SelectedModifier[]
+  ) =>
+    (modifiers ?? []).map(
+      (modifier) =>
+        `${modifier.groupName}: ${modifier.optionName}`
+    );
+
+  const addKitchenEvent = (
+    eventType: KitchenEventType,
+    items: KitchenBatchItem[]
+  ) => {
+    const event: KitchenBatch = {
+      id: `kitchen-${eventType.toLowerCase()}-${Date.now()}`,
+      orderId,
+      createdAt: new Date().toLocaleString(),
+      eventType,
+      items,
+    };
+
+    setKitchenBatches((current) => [
+      ...current,
+      event,
+    ]);
+  };
+
+  const refireItem = (item: TicketItem) => {
+    if (item.sentQty <= 0) {
+      alert(
+        "This item has not been sent to Kitchen yet."
+      );
+      return;
+    }
+
+    const rawQty = window.prompt(
+      `How many ${item.name} should be REFIRE?`,
+      String(item.sentQty)
+    );
+
+    if (rawQty === null) return;
+
+    const requestedQty = Number(rawQty);
+
+    if (
+      !Number.isInteger(requestedQty) ||
+      requestedQty < 1 ||
+      requestedQty > item.sentQty
+    ) {
+      alert(
+        `REFIRE quantity must be a whole number from 1 to ${item.sentQty}.`
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `REFIRE ${requestedQty} × ${item.name} to Kitchen?`
+    );
+
+    if (!confirmed) return;
+
+    addKitchenEvent("REFIRE", [
+      {
+        lineId: item.lineId,
+        name: item.name,
+        guest: item.guest,
+        qty: requestedQty,
+        modifiers: kitchenModifierLines(
+          item.selectedModifiers ?? []
+        ),
+        reason: "Manual refire",
+      },
+    ]);
+
+    alert(
+      `${requestedQty} × ${item.name} sent to Kitchen as REFIRE.`
+    );
+  };
 
   const addGuest = () => {
     const newGuestCount =
@@ -531,21 +910,37 @@ export default function OrderScreen({
     modifiers
       .map(
         (modifier) =>
-          `${modifier.groupId}:${modifier.optionId}:${modifier.priceDelta}`
+          `${modifier.groupId}:${modifier.optionId}:${modifier.inputValue ?? ""}:${modifier.priceMode}:${modifier.priceDelta}`
       )
       .sort()
       .join("|");
+
+  const calculateModifierPrice = (
+    basePrice: number,
+    modifiers: SelectedModifier[]
+  ) => {
+    let replacePrice: number | null = null;
+    let additions = 0;
+
+    modifiers.forEach((modifier) => {
+      if (modifier.priceMode === "replace") {
+        replacePrice = modifier.priceDelta;
+      } else {
+        additions += modifier.priceDelta;
+      }
+    });
+
+    return (replacePrice ?? basePrice) + additions;
+  };
 
   const commitItemToTicket = (
     item: MenuItem,
     selectedModifiers: SelectedModifier[]
   ) => {
-    const modifierPrice = selectedModifiers.reduce(
-      (sum, modifier) => sum + modifier.priceDelta,
-      0
+    const finalPrice = calculateModifierPrice(
+      item.price,
+      selectedModifiers
     );
-
-    const finalPrice = item.price + modifierPrice;
     const signature = modifierSignature(selectedModifiers);
 
     setTicket((current) => {
@@ -557,6 +952,8 @@ export default function OrderScreen({
             ticketItem.notes === "" &&
             ticketItem.discount === 0 &&
             ticketItem.shareMode === "none" &&
+            Number(ticketItem.basePrice ?? ticketItem.price) ===
+              Number(item.price) &&
             modifierSignature(
               ticketItem.selectedModifiers ?? []
             ) === signature
@@ -585,8 +982,9 @@ export default function OrderScreen({
 
           name: item.name,
 
-          // Snapshot the final unit price so later menu edits do not
-          // change an existing ticket.
+          // Snapshot both base and final price so later menu edits
+          // never change an existing ticket.
+          basePrice: item.price,
           price: finalPrice,
 
           qty: 1,
@@ -616,8 +1014,10 @@ export default function OrderScreen({
     setModifierQueue([]);
     setProcessedModifierGroupIds([]);
     setModifierSelections({});
+    setModifierInputValues({});
     setEditingModifierLineId(null);
     setEditingModifierBasePrice(null);
+    setEditingSentModifierSnapshot(null);
   };
 
   const startModifierFlow = (
@@ -639,18 +1039,38 @@ export default function OrderScreen({
 
     setEditingModifierLineId(null);
     setEditingModifierBasePrice(null);
+    const defaultInputs: Record<string, string> = {};
+
+    startingGroups.forEach((groupId) => {
+      const group = modifierGroups.find(
+        (candidate) => candidate.id === groupId
+      );
+
+      if (group?.inputType === "number") {
+        defaultInputs[group.id] = String(group.numberDefault);
+      }
+
+      if (group?.inputType === "text" && group.textDefault) {
+        defaultInputs[group.id] = group.textDefault;
+      }
+    });
+
     setPendingModifierItem(item);
     setModifierQueue(startingGroups);
     setProcessedModifierGroupIds([]);
     setModifierSelections({});
+    setModifierInputValues(defaultInputs);
   };
 
   const openEditModifierFlow = (
     ticketItem: TicketItem
   ) => {
-    if (ticketItem.sentQty > 0) {
+    if (
+      ticketItem.sentQty > 0 &&
+      ticketItem.qty !== 1
+    ) {
       alert(
-        "Modifiers cannot be edited after this item has been sent to Kitchen. Kitchen Update / Change will be added later."
+        "This sent line contains more than one item. Unit-by-unit Kitchen Update will be added before editing multi-quantity sent lines."
       );
       return;
     }
@@ -678,17 +1098,20 @@ export default function OrderScreen({
       return;
     }
 
-    const existingModifierTotal =
-      (ticketItem.selectedModifiers ?? []).reduce(
-        (sum, modifier) =>
-          sum + modifier.priceDelta,
-        0
-      );
-
     const preselected: Record<string, string[]> = {};
+    const prefilledInputs: Record<string, string> = {};
 
     (ticketItem.selectedModifiers ?? []).forEach(
       (modifier) => {
+        if (
+          modifier.inputType === "number" ||
+          modifier.inputType === "text"
+        ) {
+          prefilledInputs[modifier.groupId] =
+            modifier.inputValue ?? modifier.optionName;
+          return;
+        }
+
         preselected[modifier.groupId] = [
           ...(preselected[modifier.groupId] ?? []),
           modifier.optionId,
@@ -696,14 +1119,50 @@ export default function OrderScreen({
       }
     );
 
+    startingGroups.forEach((groupId) => {
+      const group = modifierGroups.find(
+        (candidate) => candidate.id === groupId
+      );
+
+      if (
+        group?.inputType === "number" &&
+        prefilledInputs[group.id] === undefined
+      ) {
+        prefilledInputs[group.id] = String(group.numberDefault);
+      }
+
+      if (
+        group?.inputType === "text" &&
+        prefilledInputs[group.id] === undefined &&
+        group.textDefault
+      ) {
+        prefilledInputs[group.id] = group.textDefault;
+      }
+    });
+
+    setEditingSentModifierSnapshot(
+      ticketItem.sentQty > 0
+        ? {
+            lineId: ticketItem.lineId,
+            name: ticketItem.name,
+            guest: ticketItem.guest,
+            qty: ticketItem.sentQty,
+            modifiers: kitchenModifierLines(
+              ticketItem.selectedModifiers ?? []
+            ),
+          }
+        : null
+    );
+
     setEditingModifierLineId(ticketItem.lineId);
     setEditingModifierBasePrice(
-      ticketItem.price - existingModifierTotal
+      Number(ticketItem.basePrice ?? menuItem.price)
     );
     setPendingModifierItem(menuItem);
     setModifierQueue(startingGroups);
     setProcessedModifierGroupIds([]);
     setModifierSelections(preselected);
+    setModifierInputValues(prefilledInputs);
   };
 
   const addItem = (
@@ -764,42 +1223,101 @@ export default function OrderScreen({
       return;
     }
 
-    const selectedIds =
-      modifierSelections[currentModifierGroup.id] ?? [];
+    const group = currentModifierGroup;
 
-    const minimum =
-      currentModifierGroup.required
-        ? Math.max(1, currentModifierGroup.minSelect)
-        : currentModifierGroup.minSelect;
+    if (
+      group.inputType === "single" ||
+      group.inputType === "multi"
+    ) {
+      const selectedIds =
+        modifierSelections[group.id] ?? [];
 
-    if (selectedIds.length < minimum) {
-      alert(
-        `Please select at least ${minimum} option(s) for ${currentModifierGroup.name}.`
-      );
-      return;
+      const minimum =
+        group.required
+          ? Math.max(1, group.minSelect)
+          : group.minSelect;
+
+      if (selectedIds.length < minimum) {
+        alert(
+          `Please select at least ${minimum} option(s) for ${group.name}.`
+        );
+        return;
+      }
+
+      if (selectedIds.length > group.maxSelect) {
+        alert(
+          `Please select no more than ${group.maxSelect} option(s) for ${group.name}.`
+        );
+        return;
+      }
     }
 
+    if (group.inputType === "number") {
+      const raw = modifierInputValues[group.id] ?? "";
+      const value = Number(raw);
+
+      if (group.required && raw.trim() === "") {
+        alert(`Please enter a value for ${group.name}.`);
+        return;
+      }
+
+      if (
+        raw.trim() !== "" &&
+        (!Number.isFinite(value) ||
+          value < group.numberMin ||
+          value > group.numberMax)
+      ) {
+        alert(
+          `${group.name} must be between ${group.numberMin} and ${group.numberMax}.`
+        );
+        return;
+      }
+    }
+
+    if (group.inputType === "text") {
+      const value =
+        modifierInputValues[group.id] ?? "";
+
+      if (group.required && !value.trim()) {
+        alert(`Please enter a value for ${group.name}.`);
+        return;
+      }
+
+      if (value.length > group.textMaxLength) {
+        alert(
+          `${group.name} is limited to ${group.textMaxLength} characters.`
+        );
+        return;
+      }
+    }
+
+    const selectedIds =
+      modifierSelections[group.id] ?? [];
+
     const selectedOptions =
-      currentModifierGroup.options.filter(
+      group.options.filter(
         (option) =>
           option.available &&
           selectedIds.includes(option.id)
       );
 
     const nextConditionalIds =
-      selectedOptions
-        .flatMap((option) => option.nextGroupIds)
-        .filter((groupId) => {
-          const nextGroup = modifierGroups.find(
-            (group) => group.id === groupId
-          );
+      group.inputType === "single" ||
+      group.inputType === "multi"
+        ? selectedOptions
+            .flatMap((option) => option.nextGroupIds)
+            .filter((groupId) => {
+              const nextGroup = modifierGroups.find(
+                (candidate) => candidate.id === groupId
+              );
 
-          return Boolean(nextGroup?.available);
-        });
+              return Boolean(nextGroup?.available);
+            })
+        : [];
 
     const processed = [
       ...processedModifierGroupIds,
-      currentModifierGroup.id,
+      group.id,
     ];
 
     const remaining = modifierQueue.slice(1);
@@ -818,61 +1336,138 @@ export default function OrderScreen({
     if (nextQueue.length > 0) {
       setProcessedModifierGroupIds(processed);
       setModifierQueue(nextQueue);
+
+      const nextGroup = modifierGroups.find(
+        (candidate) => candidate.id === nextQueue[0]
+      );
+
+      if (
+        nextGroup?.inputType === "number" &&
+        modifierInputValues[nextGroup.id] === undefined
+      ) {
+        setModifierInputValues((all) => ({
+          ...all,
+          [nextGroup.id]: String(nextGroup.numberDefault),
+        }));
+      }
+
+      if (
+        nextGroup?.inputType === "text" &&
+        modifierInputValues[nextGroup.id] === undefined &&
+        nextGroup.textDefault
+      ) {
+        setModifierInputValues((all) => ({
+          ...all,
+          [nextGroup.id]: nextGroup.textDefault,
+        }));
+      }
+
       return;
     }
 
     const selectedModifiers: SelectedModifier[] = [];
-
-    const completedGroupIds = [
-      ...processed,
-    ];
+    const completedGroupIds = [...processed];
 
     completedGroupIds.forEach((groupId) => {
-      const group = modifierGroups.find(
+      const completedGroup = modifierGroups.find(
         (candidate) => candidate.id === groupId
       );
 
-      if (!group) return;
+      if (!completedGroup) return;
 
-      const ids =
-        modifierSelections[groupId] ?? [];
+      if (
+        completedGroup.inputType === "single" ||
+        completedGroup.inputType === "multi"
+      ) {
+        const ids =
+          modifierSelections[groupId] ?? [];
 
-      group.options
-        .filter(
-          (option) =>
-            option.available &&
-            ids.includes(option.id)
-        )
-        .forEach((option) => {
-          selectedModifiers.push({
-            groupId: group.id,
-            groupName: group.name,
-            optionId: option.id,
-            optionName: option.name,
-            priceDelta: option.priceDelta,
+        completedGroup.options
+          .filter(
+            (option) =>
+              option.available &&
+              ids.includes(option.id)
+          )
+          .forEach((option) => {
+            selectedModifiers.push({
+              groupId: completedGroup.id,
+              groupName: completedGroup.name,
+              optionId: option.id,
+              optionName: option.name,
+              priceDelta: option.priceDelta,
+              priceMode: option.priceMode,
+              inputType: completedGroup.inputType,
+            });
           });
+
+        return;
+      }
+
+      if (completedGroup.inputType === "number") {
+        const raw =
+          modifierInputValues[completedGroup.id] ?? "";
+
+        if (!raw.trim() && !completedGroup.required) {
+          return;
+        }
+
+        const value = Number(raw);
+        const displayValue = `${raw}${
+          completedGroup.unitLabel
+            ? ` ${completedGroup.unitLabel}`
+            : ""
+        }`;
+
+        selectedModifiers.push({
+          groupId: completedGroup.id,
+          groupName: completedGroup.name,
+          optionId: "__number__",
+          optionName: displayValue,
+          inputValue: raw,
+          priceDelta:
+            value * completedGroup.numberPricePerUnit,
+          priceMode: completedGroup.numberPriceMode,
+          inputType: "number",
         });
+
+        return;
+      }
+
+      const text =
+        modifierInputValues[completedGroup.id] ?? "";
+
+      if (!text.trim() && !completedGroup.required) {
+        return;
+      }
+
+      selectedModifiers.push({
+        groupId: completedGroup.id,
+        groupName: completedGroup.name,
+        optionId: "__text__",
+        optionName: text,
+        inputValue: text,
+        priceDelta: 0,
+        priceMode: "add",
+        inputType: "text",
+      });
     });
 
     if (
       editingModifierLineId &&
       editingModifierBasePrice !== null
     ) {
-      const modifierPrice =
-        selectedModifiers.reduce(
-          (sum, modifier) =>
-            sum + modifier.priceDelta,
-          0
-        );
+      const finalPrice = calculateModifierPrice(
+        editingModifierBasePrice,
+        selectedModifiers
+      );
 
       setTicket((current) =>
         current.map((item) =>
           item.lineId === editingModifierLineId
             ? {
                 ...item,
-                price:
-                  editingModifierBasePrice +
-                  modifierPrice,
+                basePrice: editingModifierBasePrice,
+                price: finalPrice,
                 selectedModifiers,
               }
             : item
@@ -882,6 +1477,29 @@ export default function OrderScreen({
       setSelectedLineId(
         editingModifierLineId
       );
+
+      if (editingSentModifierSnapshot) {
+        addKitchenEvent("UPDATE", [
+          {
+            lineId:
+              editingSentModifierSnapshot.lineId,
+            name:
+              editingSentModifierSnapshot.name,
+            guest:
+              editingSentModifierSnapshot.guest,
+            qty:
+              editingSentModifierSnapshot.qty,
+            previousModifiers:
+              editingSentModifierSnapshot.modifiers,
+            modifiers:
+              kitchenModifierLines(
+                selectedModifiers
+              ),
+            reason:
+              "Modifier change after Kitchen send",
+          },
+        ]);
+      }
     } else {
       commitItemToTicket(
         pendingModifierItem,
@@ -1248,22 +1866,9 @@ export default function OrderScreen({
       return;
     }
 
-    const batch: KitchenBatch = {
-      id: `kitchen-${Date.now()}`,
-
-      orderId,
-
-      createdAt:
-        new Date().toLocaleString(),
-
-      items: unsentItems,
-    };
-
-    setKitchenBatches(
-      (current) => [
-        ...current,
-        batch,
-      ]
+    addKitchenEvent(
+      "NEW",
+      unsentItems
     );
 
     setTicket((current) =>
@@ -1337,6 +1942,21 @@ export default function OrderScreen({
       createdAt:
         new Date().toLocaleString(),
     };
+
+    if (safeQty > 0) {
+      addKitchenEvent("CANCEL", [
+        {
+          lineId: voidItem.lineId,
+          name: voidItem.name,
+          guest: voidItem.guest,
+          qty: safeQty,
+          modifiers: kitchenModifierLines(
+            voidItem.selectedModifiers ?? []
+          ),
+          reason: finalReason,
+        },
+      ]);
+    }
 
     setVoidRecords(
       (current) => [
@@ -1807,45 +2427,73 @@ export default function OrderScreen({
             Categories
           </h3>
 
-          {categories.map(
-            (category) => (
-              <button
-                key={category}
-                onClick={() =>
-                  setSelectedCategory(
-                    category
-                  )
-                }
-                style={{
-                  width: "100%",
+          {sortedMainCategories.map((category) => {
+            const selected = selectedMainCategoryId === category.id;
+            const subcategories = category.subcategories
+              .filter((subcategory) => subcategory.available)
+              .slice()
+              .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 
-                  minHeight: 55,
+            return (
+              <div key={category.id} style={{ marginBottom: 8 }}>
+                <button
+                  onClick={() => {
+                    setSelectedMainCategoryId(category.id);
+                    setSelectedSubcategoryId("");
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: 55,
+                    border: "none",
+                    borderRadius: 10,
+                    background: selected ? "#2563EB" : "#1E293B",
+                    color: "white",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                  }}
+                >
+                  {category.name}
+                  {subcategories.length > 0 ? (selected ? " ▾" : " ▸") : ""}
+                </button>
 
-                  marginBottom: 8,
-
-                  border: "none",
-
-                  borderRadius: 10,
-
-                  background:
-                    selectedCategory ===
-                    category
-                      ? "#2563EB"
-                      : "#1E293B",
-
-                  color: "white",
-
-                  fontWeight:
-                    "bold",
-
-                  cursor:
-                    "pointer",
-                }}
-              >
-                {category}
-              </button>
-            )
-          )}
+                {selected && subcategories.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 5,
+                      paddingTop: 6,
+                      paddingLeft: 8,
+                    }}
+                  >
+                    {subcategories.map((subcategory) => (
+                      <button
+                        key={subcategory.id}
+                        onClick={() => setSelectedSubcategoryId(subcategory.id)}
+                        style={{
+                          width: "100%",
+                          minHeight: 42,
+                          border: "1px solid #334155",
+                          borderRadius: 8,
+                          background:
+                            selectedSubcategoryId === subcategory.id
+                              ? "#0F766E"
+                              : "#0F172A",
+                          color: "white",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          paddingLeft: 12,
+                        }}
+                      >
+                        ↳ {subcategory.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div
@@ -1870,7 +2518,9 @@ export default function OrderScreen({
               marginBottom: 5,
             }}
           >
-            {selectedCategory}
+            {selectedSubcategory?.name ??
+              selectedMainCategory?.name ??
+              "Menu"}
           </h2>
 
           <div
@@ -1888,6 +2538,37 @@ export default function OrderScreen({
               activeSeat
             )}
           </div>
+
+          {selectedMainCategory &&
+            visibleSubcategories.length > 0 &&
+            !selectedSubcategoryId && (
+              <div
+                style={{
+                  background: "#172554",
+                  border: "1px solid #3B82F6",
+                  borderRadius: 10,
+                  padding: 14,
+                  marginBottom: 14,
+                  color: "#BFDBFE",
+                  fontWeight: 700,
+                }}
+              >
+                Select a subcategory under <strong>{selectedMainCategory.name}</strong> from the left.
+              </div>
+            )}
+
+          {selectedMainCategory && (
+            <div
+              style={{
+                color: "#94A3B8",
+                marginBottom: 12,
+                fontSize: 12,
+              }}
+            >
+              {selectedMainCategory.name}
+              {selectedSubcategory ? ` → ${selectedSubcategory.name}` : ""}
+            </div>
+          )}
 
           <div
             style={{
@@ -1947,10 +2628,10 @@ export default function OrderScreen({
                         "bold",
                     }}
                   >
-                    $
-                    {item.price.toFixed(
-                      2
-                    )}
+                    {item.price === 0 &&
+                    item.modifierGroupIds.length > 0
+                      ? "Select Options"
+                      : `$${item.price.toFixed(2)}`}
                   </div>
                 </button>
               )
@@ -2287,7 +2968,9 @@ export default function OrderScreen({
                                     >
                                       {modifier.groupName}:{" "}
                                       {modifier.optionName}
-                                      {modifier.priceDelta !== 0
+                                      {modifier.priceMode === "replace"
+                                        ? ` — $${modifier.priceDelta.toFixed(2)}`
+                                        : modifier.priceDelta !== 0
                                         ? ` (${modifier.priceDelta > 0 ? "+" : ""}$${modifier.priceDelta.toFixed(2)})`
                                         : ""}
                                     </span>
@@ -2388,27 +3071,38 @@ export default function OrderScreen({
                                         ...actionButton,
 
                                         border:
-                                          item.sentQty > 0
-                                            ? "2px solid #475569"
-                                            : "2px solid #8B5CF6",
+                                          "2px solid #8B5CF6",
 
                                         color:
-                                          item.sentQty > 0
-                                            ? "#94A3B8"
-                                            : "#DDD6FE",
+                                          "#DDD6FE",
 
-                                        opacity:
-                                          item.sentQty > 0
-                                            ? 0.65
-                                            : 1,
+                                        opacity: 1,
                                       }}
                                       title={
                                         item.sentQty > 0
-                                          ? "Sent items require a Kitchen Update / Change."
+                                          ? "Edit sent modifiers and create a Kitchen UPDATE event."
                                           : "Change modifiers before sending to Kitchen."
                                       }
                                     >
                                       Edit Modifiers
+                                    </button>
+                                  )}
+
+                                  {item.sentQty > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        refireItem(item)
+                                      }
+                                      style={{
+                                        ...actionButton,
+                                        border:
+                                          "2px solid #F97316",
+                                        color:
+                                          "#FDBA74",
+                                      }}
+                                      title="Send the same sent item to Kitchen again without changing the order."
+                                    >
+                                      Refire
                                     </button>
                                   )}
 
@@ -2659,6 +3353,8 @@ export default function OrderScreen({
 
       {/* MODIFIERS */}
 
+      {/* MODIFIERS */}
+
       {pendingModifierItem && currentModifierGroup && (
         <Modal
           title={`${
@@ -2696,74 +3392,207 @@ export default function OrderScreen({
                   fontSize: 12,
                 }}
               >
-                Select {currentModifierGroup.minSelect}–{currentModifierGroup.maxSelect}
+                {currentModifierGroup.inputType === "single"
+                  ? "Choose one"
+                  : currentModifierGroup.inputType === "multi"
+                  ? `Choose ${currentModifierGroup.minSelect}–${currentModifierGroup.maxSelect}`
+                  : currentModifierGroup.inputType === "number"
+                  ? `${currentModifierGroup.numberMin}–${currentModifierGroup.numberMax}${
+                      currentModifierGroup.unitLabel
+                        ? ` ${currentModifierGroup.unitLabel}`
+                        : ""
+                    }`
+                  : `Up to ${currentModifierGroup.textMaxLength} characters`}
               </span>
             </div>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(2, minmax(0, 1fr))",
-              gap: 8,
-            }}
-          >
-            {currentModifierGroup.options
-              .filter((option) => option.available)
-              .map((option) => {
-                const selected =
-                  (
-                    modifierSelections[
-                      currentModifierGroup.id
-                    ] ?? []
-                  ).includes(option.id);
+          {(currentModifierGroup.inputType === "single" ||
+            currentModifierGroup.inputType === "multi") && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(2, minmax(0, 1fr))",
+                gap: 8,
+              }}
+            >
+              {currentModifierGroup.options
+                .filter((option) => option.available)
+                .map((option) => {
+                  const selected =
+                    (
+                      modifierSelections[
+                        currentModifierGroup.id
+                      ] ?? []
+                    ).includes(option.id);
 
-                return (
-                  <button
-                    key={option.id}
-                    onClick={() =>
-                      toggleModifierOption(
-                        currentModifierGroup,
-                        option.id
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() =>
+                        toggleModifierOption(
+                          currentModifierGroup,
+                          option.id
+                        )
+                      }
+                      style={{
+                        minHeight: 58,
+                        borderRadius: 10,
+                        border: selected
+                          ? "3px solid white"
+                          : "1px solid #475569",
+                        background: selected
+                          ? "#2563EB"
+                          : "#1E293B",
+                        color: "white",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        padding: 9,
+                      }}
+                    >
+                      <div>
+                        {selected ? "✓ " : ""}
+                        {option.name}
+                      </div>
+
+                      {(option.priceDelta !== 0 ||
+                        option.priceMode === "replace") && (
+                        <div
+                          style={{
+                            marginTop: 5,
+                            color: "#86EFAC",
+                            fontSize: 12,
+                          }}
+                        >
+                          {option.priceMode === "replace"
+                            ? `Price $${option.priceDelta.toFixed(2)}`
+                            : `${option.priceDelta > 0 ? "+" : ""}$${option.priceDelta.toFixed(2)}`}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
+          )}
+
+          {currentModifierGroup.inputType === "number" && (
+            <div>
+              <input
+                type="number"
+                min={currentModifierGroup.numberMin}
+                max={currentModifierGroup.numberMax}
+                step={currentModifierGroup.numberStep}
+                value={
+                  modifierInputValues[currentModifierGroup.id] ??
+                  String(currentModifierGroup.numberDefault)
+                }
+                onChange={(event) =>
+                  setModifierInputValues((all) => ({
+                    ...all,
+                    [currentModifierGroup.id]: event.target.value,
+                  }))
+                }
+                style={{
+                  width: "100%",
+                  minHeight: 62,
+                  boxSizing: "border-box",
+                  borderRadius: 10,
+                  border: "2px solid #475569",
+                  background: "#0F172A",
+                  color: "white",
+                  fontSize: 24,
+                  fontWeight: 800,
+                  textAlign: "center",
+                }}
+              />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(6, minmax(0, 1fr))",
+                  gap: 7,
+                  marginTop: 9,
+                }}
+              >
+                {Array.from(
+                  {
+                    length: Math.min(
+                      12,
+                      Math.max(
+                        0,
+                        Math.floor(
+                          (currentModifierGroup.numberMax -
+                            currentModifierGroup.numberMin) /
+                            currentModifierGroup.numberStep
+                        ) + 1
                       )
+                    ),
+                  },
+                  (_, index) =>
+                    currentModifierGroup.numberMin +
+                    index * currentModifierGroup.numberStep
+                ).map((value) => (
+                  <button
+                    key={value}
+                    onClick={() =>
+                      setModifierInputValues((all) => ({
+                        ...all,
+                        [currentModifierGroup.id]: String(value),
+                      }))
                     }
                     style={{
-                      minHeight: 58,
-                      borderRadius: 10,
-                      border: selected
-                        ? "3px solid white"
-                        : "1px solid #475569",
-                      background: selected
-                        ? "#2563EB"
-                        : "#1E293B",
-                      color: "white",
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                      padding: 9,
+                      ...modalButton,
+                      background: "#1E293B",
                     }}
                   >
-                    <div>
-                      {selected ? "✓ " : ""}
-                      {option.name}
-                    </div>
-
-                    {option.priceDelta !== 0 && (
-                      <div
-                        style={{
-                          marginTop: 5,
-                          color: "#86EFAC",
-                          fontSize: 12,
-                        }}
-                      >
-                        {option.priceDelta > 0 ? "+" : ""}
-                        ${option.priceDelta.toFixed(2)}
-                      </div>
-                    )}
+                    {value}
                   </button>
-                );
-              })}
-          </div>
+                ))}
+              </div>
+
+              {currentModifierGroup.unitLabel && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    color: "#94A3B8",
+                    textAlign: "center",
+                  }}
+                >
+                  {currentModifierGroup.unitLabel}
+                </div>
+              )}
+            </div>
+          )}
+
+          {currentModifierGroup.inputType === "text" && (
+            <textarea
+              value={
+                modifierInputValues[currentModifierGroup.id] ??
+                currentModifierGroup.textDefault
+              }
+              placeholder={currentModifierGroup.textPlaceholder}
+              maxLength={currentModifierGroup.textMaxLength}
+              onChange={(event) =>
+                setModifierInputValues((all) => ({
+                  ...all,
+                  [currentModifierGroup.id]: event.target.value,
+                }))
+              }
+              style={{
+                width: "100%",
+                minHeight: 120,
+                boxSizing: "border-box",
+                borderRadius: 10,
+                border: "1px solid #475569",
+                background: "#0F172A",
+                color: "white",
+                padding: 10,
+                resize: "vertical",
+              }}
+            />
+          )}
 
           <button
             onClick={continueModifierFlow}
@@ -3346,9 +4175,41 @@ export default function OrderScreen({
                   historyCard
                 }
               >
-                <strong>
-                  {batch.createdAt}
-                </strong>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent:
+                      "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <strong>
+                    {batch.createdAt}
+                  </strong>
+
+                  <span
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 9px",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      background:
+                        batch.eventType === "NEW"
+                          ? "#14532D"
+                          : batch.eventType ===
+                            "UPDATE"
+                          ? "#1D4ED8"
+                          : batch.eventType ===
+                            "CANCEL"
+                          ? "#7F1D1D"
+                          : "#9A3412",
+                      color: "white",
+                    }}
+                  >
+                    {batch.eventType}
+                  </span>
+                </div>
 
                 {batch.items.map(
                   (
@@ -3368,6 +4229,42 @@ export default function OrderScreen({
                         item.guest
                       )}
 
+                      {batch.eventType ===
+                        "UPDATE" &&
+                        item.previousModifiers &&
+                        item.previousModifiers.length >
+                          0 && (
+                          <div
+                            style={{
+                              color: "#FCA5A5",
+                              fontSize: 12,
+                              marginTop: 5,
+                              paddingLeft: 12,
+                            }}
+                          >
+                            BEFORE:{" "}
+                            {item.previousModifiers.join(
+                              " | "
+                            )}
+                          </div>
+                        )}
+
+                      {batch.eventType ===
+                        "UPDATE" &&
+                        item.modifiers.length >
+                          0 && (
+                          <div
+                            style={{
+                              color: "#86EFAC",
+                              fontSize: 12,
+                              marginTop: 3,
+                              paddingLeft: 12,
+                            }}
+                          >
+                            AFTER:
+                          </div>
+                        )}
+
                       {item.modifiers?.map(
                         (modifier, modifierIndex) => (
                           <div
@@ -3382,6 +4279,19 @@ export default function OrderScreen({
                             • {modifier}
                           </div>
                         )
+                      )}
+
+                      {item.reason && (
+                        <div
+                          style={{
+                            color: "#FDE68A",
+                            fontSize: 11,
+                            marginTop: 4,
+                            paddingLeft: 12,
+                          }}
+                        >
+                          Reason: {item.reason}
+                        </div>
                       )}
                     </div>
                   )

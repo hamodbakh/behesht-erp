@@ -5,6 +5,8 @@ import MenuManagement from "./MenuManagement";
 import ModifierManagement from "./ModifierManagement";
 
 type StaffRole = "Server" | "Supervisor" | "Manager" | "Owner";
+type AppMode = "pos" | "setup" | null;
+type SetupPage = "home" | "menu" | "modifiers";
 
 type StaffUser = {
   id: number;
@@ -17,12 +19,16 @@ function App() {
   const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
   const [workingDayOpen, setWorkingDayOpen] = useState(false);
   const [checkedIn, setCheckedIn] = useState(false);
+  const [onBreak, setOnBreak] = useState(false);
+  const [showShiftPanel, setShowShiftPanel] = useState(false);
   const [showCloseDay, setShowCloseDay] = useState(false);
-  const [showMenuManagement, setShowMenuManagement] = useState(false);
-  const [showModifierManagement, setShowModifierManagement] = useState(false);
+  const [appMode, setAppMode] = useState<AppMode>(null);
+  const [setupPage, setSetupPage] = useState<SetupPage>("home");
 
   const canManageWorkingDay =
     currentUser?.role === "Owner" || currentUser?.role === "Manager";
+
+  const canOpenSetup = canManageWorkingDay;
 
   // Temporary totals.
   // Later these values will come from the database.
@@ -45,160 +51,145 @@ function App() {
     return `$${amount.toFixed(2)}`;
   };
 
+  const shiftStorageKey = (userId: number) =>
+    `behesht-shift-${userId}`;
+
+  const loadShiftState = (userId: number) => {
+    try {
+      const saved = localStorage.getItem(
+        shiftStorageKey(userId)
+      );
+
+      if (!saved) {
+        return {
+          checkedIn: false,
+          onBreak: false,
+        };
+      }
+
+      const parsed = JSON.parse(saved);
+
+      return {
+        checkedIn: Boolean(parsed.checkedIn),
+        onBreak: Boolean(parsed.onBreak),
+      };
+    } catch {
+      return {
+        checkedIn: false,
+        onBreak: false,
+      };
+    }
+  };
+
+  const saveShiftState = (
+    userId: number,
+    nextCheckedIn: boolean,
+    nextOnBreak: boolean
+  ) => {
+    localStorage.setItem(
+      shiftStorageKey(userId),
+      JSON.stringify({
+        checkedIn: nextCheckedIn,
+        onBreak: nextOnBreak,
+      })
+    );
+  };
+
+  const setEmployeeShift = (
+    nextCheckedIn: boolean,
+    nextOnBreak: boolean
+  ) => {
+    setCheckedIn(nextCheckedIn);
+    setOnBreak(nextOnBreak);
+
+    if (currentUser) {
+      saveShiftState(
+        currentUser.id,
+        nextCheckedIn,
+        nextOnBreak
+      );
+    }
+  };
+
   // LOGIN SCREEN
   if (!currentUser) {
     return (
       <Login
         onLogin={(user) => {
+          const savedShift = loadShiftState(user.id);
+
           setCurrentUser(user);
-          setCheckedIn(false);
+          setCheckedIn(savedShift.checkedIn);
+          setOnBreak(savedShift.onBreak);
+          setShowShiftPanel(
+            savedShift.onBreak
+          );
+          setSetupPage("home");
+
+          // Operational staff go straight to POS.
+          // If already clocked in, no extra shift question appears.
+          setAppMode(
+            user.role === "Server" || user.role === "Supervisor"
+              ? "pos"
+              : null
+          );
         }}
       />
     );
   }
 
-  // CHECK-IN / OPEN WORKING DAY
-  if (!checkedIn || !workingDayOpen) {
+  // OWNER / MANAGER: CHOOSE FRONT POS OR POS SETUP
+  if (appMode === null && canOpenSetup) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#0F172A",
-          color: "white",
-          fontFamily: "Arial, sans-serif",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 20,
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 600,
-            background: "#111827",
-            borderRadius: 22,
-            padding: 35,
-            boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-          }}
-        >
-          <h1
-            style={{
-              textAlign: "center",
-              marginTop: 0,
-            }}
-          >
-            Behesht ERP
-          </h1>
-
-          <div
-            style={{
-              background: "#1E293B",
-              padding: 20,
-              borderRadius: 14,
-              marginBottom: 20,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: "bold",
-              }}
-            >
-              {currentUser.name}
-            </div>
-
-            <div
-              style={{
-                color: "#94A3B8",
-                marginTop: 5,
-              }}
-            >
-              {currentUser.role}
+      <div style={workspacePageStyle}>
+        <div style={workspaceCardStyle}>
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <h1 style={{ margin: 0 }}>Behesht ERP</h1>
+            <div style={{ color: "#94A3B8", marginTop: 6 }}>
+              {currentUser.name} • {currentUser.role}
             </div>
           </div>
 
-          <div
-            style={{
-              background: workingDayOpen ? "#14532D" : "#7F1D1D",
-              padding: 18,
-              borderRadius: 14,
-              marginBottom: 20,
-            }}
-          >
-            <strong>Working Day:</strong>{" "}
-            {workingDayOpen ? "OPEN" : "CLOSED"}
+          <div style={workspaceGridStyle}>
+            <button
+              onClick={() => setAppMode("pos")}
+              style={{
+                ...workspaceButtonStyle,
+                background: "#14532D",
+                border: "1px solid #22C55E",
+              }}
+            >
+              <div style={workspaceTitleStyle}>Front POS</div>
+              <div style={workspaceDescriptionStyle}>
+                Floor Plan, tables, orders, kitchen, split bill and payment
+              </div>
+            </button>
+
+            <button
+              onClick={() => {
+                setAppMode("setup");
+                setSetupPage("home");
+              }}
+              style={{
+                ...workspaceButtonStyle,
+                background: "#172554",
+                border: "1px solid #3B82F6",
+              }}
+            >
+              <div style={workspaceTitleStyle}>POS Setup / Back Office</div>
+              <div style={workspaceDescriptionStyle}>
+                Menu, modifiers, staff, reports, inventory, printers and settings
+              </div>
+            </button>
           </div>
-
-          {!workingDayOpen && canManageWorkingDay && (
-            <button
-              onClick={() => setWorkingDayOpen(true)}
-              style={{
-                width: "100%",
-                height: 60,
-                background: "#16A34A",
-                color: "white",
-                border: "none",
-                borderRadius: 12,
-                fontSize: 18,
-                fontWeight: "bold",
-                cursor: "pointer",
-                marginBottom: 15,
-              }}
-            >
-              Open Working Day
-            </button>
-          )}
-
-          {!workingDayOpen && !canManageWorkingDay && (
-            <div
-              style={{
-                background: "#78350F",
-                padding: 15,
-                borderRadius: 12,
-                marginBottom: 15,
-                textAlign: "center",
-              }}
-            >
-              Manager or Owner must open the Working Day.
-            </div>
-          )}
-
-          {workingDayOpen && !checkedIn && (
-            <button
-              onClick={() => setCheckedIn(true)}
-              style={{
-                width: "100%",
-                height: 60,
-                background: "#2563EB",
-                color: "white",
-                border: "none",
-                borderRadius: 12,
-                fontSize: 18,
-                fontWeight: "bold",
-                cursor: "pointer",
-                marginBottom: 15,
-              }}
-            >
-              Check In
-            </button>
-          )}
 
           <button
             onClick={() => {
               setCurrentUser(null);
+              setAppMode(null);
               setCheckedIn(false);
             }}
-            style={{
-              width: "100%",
-              height: 48,
-              background: "#334155",
-              color: "white",
-              border: "none",
-              borderRadius: 10,
-              marginTop: 10,
-              cursor: "pointer",
-            }}
+            style={workspaceLogoutButton}
           >
             Logout
           </button>
@@ -207,25 +198,303 @@ function App() {
     );
   }
 
-  // BACK OFFICE - MENU MANAGEMENT
-  if (showMenuManagement) {
+  // POS SETUP / BACK OFFICE
+  if (appMode === "setup") {
+    if (setupPage === "menu") {
+      return (
+        <MenuManagement
+          onBack={() => setSetupPage("home")}
+        />
+      );
+    }
+
+    if (setupPage === "modifiers") {
+      return (
+        <ModifierManagement
+          onBack={() => setSetupPage("home")}
+        />
+      );
+    }
+
     return (
-      <MenuManagement
-        onBack={() =>
-          setShowMenuManagement(false)
-        }
-      />
+      <div style={setupPageStyle}>
+        <div style={setupHeaderStyle}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900 }}>
+              POS Setup / Back Office
+            </div>
+            <div style={{ color: "#94A3B8", marginTop: 4 }}>
+              {currentUser.name} • {currentUser.role}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={() => setAppMode("pos")}
+              style={setupHeaderButton}
+            >
+              Open POS
+            </button>
+
+            <button
+              onClick={() => setAppMode(null)}
+              style={setupHeaderButton}
+            >
+              Workspace
+            </button>
+
+            <button
+              onClick={() => {
+                setCurrentUser(null);
+                setAppMode(null);
+                setCheckedIn(false);
+              }}
+              style={{
+                ...setupHeaderButton,
+                background: "#7F1D1D",
+                borderColor: "#DC2626",
+              }}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div style={setupGridStyle}>
+          <SetupCard
+            title="Menu"
+            description="Menu items, prices, availability and modifier assignment."
+            status="Available"
+            onClick={() => setSetupPage("menu")}
+          />
+
+          <SetupCard
+            title="Modifiers"
+            description="Reusable modifier groups, number inputs, price choices and conditional flows."
+            status="Available"
+            onClick={() => setSetupPage("modifiers")}
+          />
+
+          <SetupCard
+            title="Staff & Permissions"
+            description="Employees, PINs, roles and permissions."
+            status="Coming Next"
+          />
+
+          <SetupCard
+            title="Printers / KDS"
+            description="Kitchen routing, printers and kitchen displays."
+            status="Planned"
+          />
+
+          <SetupCard
+            title="Reports"
+            description="Sales, tips, gratuity, discounts, voids and financial reports."
+            status="Planned"
+          />
+
+          <SetupCard
+            title="Inventory"
+            description="Stock, purchasing, ingredients and costs."
+            status="Planned"
+          />
+
+          <SetupCard
+            title="Audit"
+            description="Critical action history and authorized corrections."
+            status="Planned"
+          />
+
+          <SetupCard
+            title="Backup & Restore"
+            description="Automatic backups, archives and restore tools."
+            status="Planned"
+          />
+
+          <SetupCard
+            title="Settings"
+            description="Taxes, payments and system preferences."
+            status="Planned"
+          />
+        </div>
+      </div>
     );
   }
 
-  // BACK OFFICE - MODIFIER MANAGEMENT
-  if (showModifierManagement) {
+  // SHIFT / WORKING DAY SCREEN — shown only when needed
+  if (!workingDayOpen || !checkedIn || onBreak || showShiftPanel) {
+    const canClockIn = workingDayOpen && !checkedIn;
+    const canStartBreak = workingDayOpen && checkedIn && !onBreak;
+    const canEndBreak = workingDayOpen && checkedIn && onBreak;
+    const canClockOut = workingDayOpen && checkedIn;
+
     return (
-      <ModifierManagement
-        onBack={() =>
-          setShowModifierManagement(false)
-        }
-      />
+      <div style={shiftPageStyle}>
+        <div style={shiftCardStyle}>
+          <div style={{ textAlign: "center", marginBottom: 18 }}>
+            <div style={{ fontSize: 28, fontWeight: 900 }}>
+              Employee Shift
+            </div>
+            <div style={{ color: "#94A3B8", marginTop: 5 }}>
+              {currentUser.name} • {currentUser.role}
+            </div>
+          </div>
+
+          <div
+            style={{
+              ...shiftStatusStyle,
+              background: workingDayOpen ? "#14532D" : "#7F1D1D",
+            }}
+          >
+            <strong>Working Day:</strong>{" "}
+            {workingDayOpen ? "OPEN" : "CLOSED"}
+          </div>
+
+          <div
+            style={{
+              ...shiftStatusStyle,
+              background: !checkedIn
+                ? "#1E293B"
+                : onBreak
+                ? "#78350F"
+                : "#172554",
+            }}
+          >
+            <strong>Shift:</strong>{" "}
+            {!checkedIn
+              ? "NOT CLOCKED IN"
+              : onBreak
+              ? "ON BREAK"
+              : "CLOCKED IN"}
+          </div>
+
+          {!workingDayOpen && canManageWorkingDay && (
+            <button
+              onClick={() => setWorkingDayOpen(true)}
+              style={{
+                ...shiftActionButtonStyle,
+                background: "#16A34A",
+              }}
+            >
+              Open Working Day
+            </button>
+          )}
+
+          {!workingDayOpen && !canManageWorkingDay && (
+            <div style={shiftWarningStyle}>
+              Manager or Owner must open the Working Day.
+            </div>
+          )}
+
+          {workingDayOpen && (
+            <div style={shiftActionGridStyle}>
+              <button
+                disabled={!canClockIn}
+                onClick={() => {
+                  setEmployeeShift(true, false);
+                  setShowShiftPanel(false);
+                }}
+                style={getShiftButtonStyle(
+                  canClockIn,
+                  "#2563EB"
+                )}
+              >
+                Clock In
+              </button>
+
+              <button
+                disabled={!canStartBreak}
+                onClick={() => {
+                  setEmployeeShift(true, true);
+                  setShowShiftPanel(true);
+                }}
+                style={getShiftButtonStyle(
+                  canStartBreak,
+                  "#D97706"
+                )}
+              >
+                Start Break
+              </button>
+
+              <button
+                disabled={!canEndBreak}
+                onClick={() => {
+                  setEmployeeShift(true, false);
+                  setShowShiftPanel(false);
+                }}
+                style={getShiftButtonStyle(
+                  canEndBreak,
+                  "#16A34A"
+                )}
+              >
+                End Break
+              </button>
+
+              <button
+                disabled={!checkedIn}
+                onClick={() =>
+                  alert(
+                    "Cash Out workflow will be connected to server sales and cash totals later."
+                  )
+                }
+                style={getShiftButtonStyle(
+                  checkedIn,
+                  "#7C3AED"
+                )}
+              >
+                Cash Out
+              </button>
+
+              <button
+                disabled={!canClockOut}
+                onClick={() => {
+                  setEmployeeShift(false, false);
+                  setShowShiftPanel(false);
+                }}
+                style={getShiftButtonStyle(
+                  canClockOut,
+                  "#DC2626"
+                )}
+              >
+                Clock Out
+              </button>
+
+              <button
+                disabled={!checkedIn || onBreak}
+                onClick={() => setShowShiftPanel(false)}
+                style={getShiftButtonStyle(
+                  checkedIn && !onBreak,
+                  "#0F766E"
+                )}
+              >
+                Continue to Floor Plan
+              </button>
+            </div>
+          )}
+
+          {canOpenSetup && (
+            <button
+              onClick={() => {
+                setAppMode("setup");
+                setSetupPage("home");
+              }}
+              style={shiftSecondaryButtonStyle}
+            >
+              POS Setup / Back Office
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              setCurrentUser(null);
+              setShowShiftPanel(false);
+            }}
+            style={shiftSecondaryButtonStyle}
+          >
+            Logout
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -275,13 +544,14 @@ function App() {
             flexWrap: "wrap",
           }}
         >
-          {canManageWorkingDay && (
+          {canOpenSetup && (
             <button
-              onClick={() =>
-                setShowMenuManagement(true)
-              }
+              onClick={() => {
+                setAppMode("setup");
+                setSetupPage("home");
+              }}
               style={{
-                background: "#0891B2",
+                background: "#1D4ED8",
                 color: "white",
                 border: "none",
                 borderRadius: 8,
@@ -290,26 +560,7 @@ function App() {
                 cursor: "pointer",
               }}
             >
-              Back Office / Menu
-            </button>
-          )}
-
-          {canManageWorkingDay && (
-            <button
-              onClick={() =>
-                setShowModifierManagement(true)
-              }
-              style={{
-                background: "#2563EB",
-                color: "white",
-                border: "none",
-                borderRadius: 8,
-                padding: "10px 18px",
-                fontWeight: "bold",
-                cursor: "pointer",
-              }}
-            >
-              Back Office / Modifiers
+              POS Setup
             </button>
           )}
 
@@ -331,7 +582,7 @@ function App() {
           )}
 
           <button
-            onClick={() => setCheckedIn(false)}
+            onClick={() => setShowShiftPanel(true)}
             style={{
               background: "#F59E0B",
               color: "white",
@@ -342,13 +593,13 @@ function App() {
               cursor: "pointer",
             }}
           >
-            Check Out
+            Shift
           </button>
 
           <button
             onClick={() => {
               setCurrentUser(null);
-              setCheckedIn(false);
+              setShowShiftPanel(false);
             }}
             style={{
               background: "#DC2626",
@@ -467,7 +718,8 @@ function App() {
             <button
               onClick={() => {
                 setWorkingDayOpen(false);
-                setCheckedIn(false);
+                setEmployeeShift(false, false);
+                setShowShiftPanel(false);
                 setShowCloseDay(false);
               }}
               style={{
@@ -509,6 +761,52 @@ function App() {
   );
 }
 
+function SetupCard({
+  title,
+  description,
+  status,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  status: string;
+  onClick?: () => void;
+}) {
+  const active = Boolean(onClick);
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={!active}
+      style={{
+        ...setupCardStyle,
+        opacity: active ? 1 : 0.68,
+        cursor: active ? "pointer" : "default",
+      }}
+    >
+      <div style={setupCardTopStyle}>
+        <strong style={{ fontSize: 19 }}>{title}</strong>
+
+        <span
+          style={{
+            ...setupStatusStyle,
+            background:
+              status === "Available" ? "#14532D" : "#1E293B",
+            color:
+              status === "Available" ? "#86EFAC" : "#94A3B8",
+          }}
+        >
+          {status}
+        </span>
+      </div>
+
+      <div style={setupDescriptionStyle}>
+        {description}
+      </div>
+    </button>
+  );
+}
+
 function SummaryRow({
   label,
   value,
@@ -531,5 +829,207 @@ function SummaryRow({
     </div>
   );
 }
+
+const shiftPageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: "#020617",
+  color: "white",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+  boxSizing: "border-box",
+  fontFamily: "Arial, sans-serif",
+};
+
+const shiftCardStyle: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 720,
+  background: "#0F172A",
+  border: "1px solid #1E293B",
+  borderRadius: 20,
+  padding: 26,
+  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+};
+
+const shiftStatusStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: 12,
+  marginBottom: 10,
+};
+
+const shiftActionGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 10,
+  marginTop: 14,
+};
+
+const shiftActionButtonStyle: React.CSSProperties = {
+  minHeight: 58,
+  border: "none",
+  borderRadius: 10,
+  color: "white",
+  fontWeight: 800,
+  fontSize: 16,
+};
+
+const shiftSecondaryButtonStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 48,
+  background: "#334155",
+  color: "white",
+  border: "none",
+  borderRadius: 10,
+  marginTop: 10,
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const shiftWarningStyle: React.CSSProperties = {
+  background: "#78350F",
+  padding: 14,
+  borderRadius: 10,
+  textAlign: "center",
+};
+
+function getShiftButtonStyle(
+  enabled: boolean,
+  background: string
+): React.CSSProperties {
+  return {
+    ...shiftActionButtonStyle,
+    background: enabled ? background : "#334155",
+    opacity: enabled ? 1 : 0.45,
+    cursor: enabled ? "pointer" : "not-allowed",
+  };
+}
+
+const workspacePageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: "#020617",
+  color: "white",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 20,
+  boxSizing: "border-box",
+  fontFamily: "Arial, sans-serif",
+};
+
+const workspaceCardStyle: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 900,
+  background: "#0F172A",
+  border: "1px solid #1E293B",
+  borderRadius: 20,
+  padding: 28,
+};
+
+const workspaceGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 16,
+};
+
+const workspaceButtonStyle: React.CSSProperties = {
+  minHeight: 190,
+  borderRadius: 16,
+  color: "white",
+  padding: 22,
+  textAlign: "left",
+  cursor: "pointer",
+};
+
+const workspaceTitleStyle: React.CSSProperties = {
+  fontSize: 25,
+  fontWeight: 900,
+};
+
+const workspaceDescriptionStyle: React.CSSProperties = {
+  color: "#CBD5E1",
+  lineHeight: 1.5,
+  marginTop: 12,
+};
+
+const workspaceLogoutButton: React.CSSProperties = {
+  width: "100%",
+  height: 48,
+  marginTop: 18,
+  background: "#334155",
+  color: "white",
+  border: "none",
+  borderRadius: 10,
+  cursor: "pointer",
+};
+
+const setupPageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: "#020617",
+  color: "white",
+  padding: 14,
+  boxSizing: "border-box",
+  fontFamily: "Arial, sans-serif",
+};
+
+const setupHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  flexWrap: "wrap",
+  background: "#0F172A",
+  border: "1px solid #1E293B",
+  borderRadius: 14,
+  padding: 14,
+};
+
+const setupHeaderButton: React.CSSProperties = {
+  background: "#1E293B",
+  color: "white",
+  border: "1px solid #475569",
+  borderRadius: 8,
+  padding: "9px 12px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const setupGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: 12,
+  marginTop: 14,
+};
+
+const setupCardStyle: React.CSSProperties = {
+  minHeight: 140,
+  background: "#0F172A",
+  color: "white",
+  border: "1px solid #334155",
+  borderRadius: 14,
+  padding: 16,
+  textAlign: "left",
+};
+
+const setupCardTopStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 10,
+};
+
+const setupStatusStyle: React.CSSProperties = {
+  borderRadius: 999,
+  padding: "4px 8px",
+  fontSize: 11,
+  fontWeight: 800,
+};
+
+const setupDescriptionStyle: React.CSSProperties = {
+  color: "#94A3B8",
+  lineHeight: 1.45,
+  marginTop: 12,
+  fontSize: 13,
+};
 
 export default App;
