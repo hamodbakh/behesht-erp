@@ -18,6 +18,25 @@ type MenuItem = {
   price: number;
   available: boolean;
   modifierGroupIds: string[];
+  kitchenStationId: string;
+};
+
+type OutputDevice = {
+  id: string;
+  name: string;
+  type: "printer" | "kds";
+  address: string;
+  enabled: boolean;
+  model: string;
+};
+
+type KitchenStation = {
+  id: string;
+  name: string;
+  order: number;
+  available: boolean;
+  mode: "printer" | "kds" | "both";
+  outputDeviceIds: string[];
 };
 
 type SubcategoryRecord = {
@@ -104,6 +123,11 @@ type TicketItem = {
 
   // Snapshot of modifier choices at the time of ordering.
   selectedModifiers: SelectedModifier[];
+
+  // Snapshot the route so later Back Office changes do not reroute
+  // an already-created ticket line unexpectedly.
+  kitchenStationId: string;
+  kitchenStationName: string;
 };
 
 type KitchenEventType =
@@ -130,6 +154,38 @@ type KitchenBatch = {
   orderId: string;
   createdAt: string;
   eventType: KitchenEventType;
+  stationId: string;
+  stationName: string;
+
+  // Snapshot output destinations for this event.
+  outputDeviceIds: string[];
+  outputDeviceNames: string[];
+
+  items: KitchenBatchItem[];
+};
+
+type PrinterJobStatus = "PENDING" | "SENT" | "FAILED";
+
+type PrinterJob = {
+  id: string;
+  kitchenEventId: string;
+  orderId: string;
+  createdAt: string;
+  updatedAt: string;
+
+  eventType: KitchenEventType;
+
+  stationId: string;
+  stationName: string;
+
+  deviceId: string;
+  deviceName: string;
+  deviceType: "printer" | "kds";
+
+  status: PrinterJobStatus;
+  attempts: number;
+  lastError?: string;
+
   items: KitchenBatchItem[];
 };
 
@@ -156,20 +212,23 @@ type OrderScreenProps = {
 const MENU_STORAGE_KEY = "behesht-menu-items";
 const MODIFIER_STORAGE_KEY = "behesht-modifier-groups";
 const CATEGORY_STORAGE_KEY = "behesht-menu-categories";
+const KITCHEN_STATION_STORAGE_KEY = "behesht-kitchen-stations";
+const OUTPUT_DEVICE_STORAGE_KEY = "behesht-output-devices";
+const PRINTER_JOB_QUEUE_STORAGE_KEY = "behesht-output-job-queue";
 
 const defaultMenuItems: MenuItem[] = [
-  { id: "1", name: "Koobideh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 19.99, available: true, modifierGroupIds: [] },
-  { id: "2", name: "Joojeh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 21.99, available: true, modifierGroupIds: [] },
-  { id: "3", name: "Vaziri", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 27.99, available: true, modifierGroupIds: [] },
-  { id: "4", name: "Shirazi Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 8.99, available: true, modifierGroupIds: [] },
-  { id: "5", name: "Caesar Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 12.99, available: true, modifierGroupIds: [] },
-  { id: "6", name: "Kashk Bademjan", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 13.99, available: true, modifierGroupIds: [] },
-  { id: "7", name: "Hummus", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 9.99, available: true, modifierGroupIds: [] },
-  { id: "8", name: "Tea", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 4.99, available: true, modifierGroupIds: [] },
-  { id: "9", name: "Coke", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 3.99, available: true, modifierGroupIds: [] },
-  { id: "10", name: "Water", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 2.99, available: true, modifierGroupIds: [] },
-  { id: "11", name: "Classic Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 29.99, available: true, modifierGroupIds: [] },
-  { id: "12", name: "Premium Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 39.99, available: true, modifierGroupIds: [] },
+  { id: "1", name: "Koobideh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 19.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "2", name: "Joojeh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 21.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "3", name: "Vaziri", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 27.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "4", name: "Shirazi Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 8.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "5", name: "Caesar Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 12.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "6", name: "Kashk Bademjan", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 13.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "7", name: "Hummus", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 9.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "8", name: "Tea", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 4.99, available: true, modifierGroupIds: [], kitchenStationId: "station-bar" },
+  { id: "9", name: "Coke", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 3.99, available: true, modifierGroupIds: [], kitchenStationId: "station-bar" },
+  { id: "10", name: "Water", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 2.99, available: true, modifierGroupIds: [], kitchenStationId: "station-bar" },
+  { id: "11", name: "Classic Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 29.99, available: true, modifierGroupIds: [], kitchenStationId: "station-shisha" },
+  { id: "12", name: "Premium Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 39.99, available: true, modifierGroupIds: [], kitchenStationId: "station-shisha" },
 ];
 
 function loadMenuCategories(): CategoryRecord[] {
@@ -237,6 +296,7 @@ function loadMenuItems(): MenuItem[] {
       modifierGroupIds: Array.isArray(item.modifierGroupIds)
         ? item.modifierGroupIds.map(String)
         : [],
+      kitchenStationId: String(item.kitchenStationId ?? ""),
     }));
   } catch {
     return defaultMenuItems;
@@ -309,6 +369,61 @@ function loadModifierGroups(): ModifierGroup[] {
   }
 }
 
+function loadKitchenStations(): KitchenStation[] {
+  const saved = localStorage.getItem(KITCHEN_STATION_STORAGE_KEY);
+
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((station: any, index: number) => ({
+      id: String(station.id ?? `station-${index + 1}`),
+      name: String(station.name ?? "Station"),
+      order: Number(station.order ?? index + 1),
+      available:
+        station.available === undefined
+          ? true
+          : Boolean(station.available),
+      mode:
+        station.mode === "kds" || station.mode === "both"
+          ? station.mode
+          : "printer",
+      outputDeviceIds: Array.isArray(station.outputDeviceIds)
+        ? station.outputDeviceIds.map(String)
+        : [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function loadOutputDevices(): OutputDevice[] {
+  const saved = localStorage.getItem(OUTPUT_DEVICE_STORAGE_KEY);
+
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((device: any, index: number) => ({
+      id: String(device.id ?? `device-${index + 1}`),
+      name: String(device.name ?? "Output Device"),
+      type: device.type === "kds" ? "kds" : "printer",
+      address: String(device.address ?? ""),
+      enabled:
+        device.enabled === undefined
+          ? true
+          : Boolean(device.enabled),
+      model: String(device.model ?? ""),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 const voidReasons = [
   "Customer Changed Mind",
   "Wrong Item Entered",
@@ -355,6 +470,16 @@ function loadKitchenHistory(
       batch.eventType === "REFIRE"
         ? batch.eventType
         : "NEW",
+
+    stationId: String(batch.stationId ?? ""),
+    stationName: String(batch.stationName ?? "Legacy / Unassigned"),
+
+    outputDeviceIds: Array.isArray(batch.outputDeviceIds)
+      ? batch.outputDeviceIds.map(String)
+      : [],
+    outputDeviceNames: Array.isArray(batch.outputDeviceNames)
+      ? batch.outputDeviceNames.map(String)
+      : [],
 
     items: Array.isArray(batch.items)
       ? batch.items.map(
@@ -469,6 +594,9 @@ function loadTicket(key: string): TicketItem[] {
               : String(modifier.inputValue),
         }))
       : [],
+
+    kitchenStationId: String(item.kitchenStationId ?? ""),
+    kitchenStationName: String(item.kitchenStationName ?? ""),
   }));
 }
 
@@ -492,6 +620,12 @@ export default function OrderScreen({
 
   const [modifierGroups, setModifierGroups] =
     useState<ModifierGroup[]>(loadModifierGroups);
+
+  const [kitchenStations, setKitchenStations] =
+    useState<KitchenStation[]>(loadKitchenStations);
+
+  const [outputDevices, setOutputDevices] =
+    useState<OutputDevice[]>(loadOutputDevices);
 
   const [pendingModifierItem, setPendingModifierItem] =
     useState<MenuItem | null>(null);
@@ -555,6 +689,11 @@ export default function OrderScreen({
       loadKitchenHistory(kitchenStorageKey)
     );
 
+  const [printerJobs, setPrinterJobs] =
+    useState<PrinterJob[]>(() =>
+      loadArray<PrinterJob>(PRINTER_JOB_QUEUE_STORAGE_KEY)
+    );
+
   const [voidRecords, setVoidRecords] =
     useState<VoidRecord[]>(() =>
       loadArray<VoidRecord>(voidStorageKey)
@@ -599,6 +738,9 @@ export default function OrderScreen({
   const [showKitchenHistory, setShowKitchenHistory] =
     useState(false);
 
+  const [showPrinterQueue, setShowPrinterQueue] =
+    useState(false);
+
   const [showVoidHistory, setShowVoidHistory] =
     useState(false);
 
@@ -618,6 +760,13 @@ export default function OrderScreen({
       JSON.stringify(kitchenBatches)
     );
   }, [kitchenStorageKey, kitchenBatches]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      PRINTER_JOB_QUEUE_STORAGE_KEY,
+      JSON.stringify(printerJobs)
+    );
+  }, [printerJobs]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -644,6 +793,8 @@ export default function OrderScreen({
       setMenuItems(loadMenuItems());
       setMenuCategories(loadMenuCategories());
       setModifierGroups(loadModifierGroups());
+      setKitchenStations(loadKitchenStations());
+      setOutputDevices(loadOutputDevices());
     };
 
     window.addEventListener("focus", refreshMenu);
@@ -799,15 +950,102 @@ export default function OrderScreen({
         `${modifier.groupName}: ${modifier.optionName}`
     );
 
+  const getStationForMenuItem = (
+    menuItemId: string,
+    stationIdSnapshot = "",
+    stationNameSnapshot = ""
+  ) => {
+    if (stationIdSnapshot) {
+      const snapshotStation = kitchenStations.find(
+        (station) => station.id === stationIdSnapshot
+      );
+
+      return {
+        id: stationIdSnapshot,
+        name:
+          stationNameSnapshot ||
+          snapshotStation?.name ||
+          "Unassigned",
+        available:
+          snapshotStation?.available ?? true,
+        outputDeviceIds:
+          snapshotStation?.outputDeviceIds ?? [],
+      };
+    }
+
+    const menuItem = menuItems.find(
+      (item) => item.id === menuItemId
+    );
+
+    const station = kitchenStations.find(
+      (candidate) =>
+        candidate.id === menuItem?.kitchenStationId
+    );
+
+    return {
+      id: station?.id ?? "",
+      name: station?.name ?? "Unassigned",
+      available: station?.available ?? false,
+      outputDeviceIds: station?.outputDeviceIds ?? [],
+    };
+  };
+
+  const getActiveOutputDevices = (
+    station: {
+      id: string;
+      outputDeviceIds?: string[];
+    }
+  ) => {
+    const assignedIds =
+      station.outputDeviceIds ??
+      kitchenStations.find(
+        (candidate) => candidate.id === station.id
+      )?.outputDeviceIds ??
+      [];
+
+    return assignedIds
+      .map((deviceId) =>
+        outputDevices.find(
+          (device) => device.id === deviceId
+        )
+      )
+      .filter(
+        (device): device is OutputDevice =>
+          Boolean(device?.enabled)
+      );
+  };
+
   const addKitchenEvent = (
     eventType: KitchenEventType,
-    items: KitchenBatchItem[]
+    items: KitchenBatchItem[],
+    station: {
+      id: string;
+      name: string;
+      outputDeviceIds?: string[];
+    }
   ) => {
+    const activeDevices =
+      getActiveOutputDevices(station);
+
+    const eventId =
+      `kitchen-${eventType.toLowerCase()}-${Date.now()}-${station.id || "unassigned"}`;
+
+    const createdAt =
+      new Date().toLocaleString();
+
     const event: KitchenBatch = {
-      id: `kitchen-${eventType.toLowerCase()}-${Date.now()}`,
+      id: eventId,
       orderId,
-      createdAt: new Date().toLocaleString(),
+      createdAt,
       eventType,
+      stationId: station.id,
+      stationName: station.name,
+      outputDeviceIds: activeDevices.map(
+        (device) => device.id
+      ),
+      outputDeviceNames: activeDevices.map(
+        (device) => device.name
+      ),
       items,
     };
 
@@ -815,6 +1053,105 @@ export default function OrderScreen({
       ...current,
       event,
     ]);
+
+    const createdJobs: PrinterJob[] =
+      activeDevices.map((device, index) => ({
+        id: `output-job-${Date.now()}-${index}-${device.id}`,
+        kitchenEventId: eventId,
+        orderId,
+        createdAt,
+        updatedAt: createdAt,
+        eventType,
+        stationId: station.id,
+        stationName: station.name,
+        deviceId: device.id,
+        deviceName: device.name,
+        deviceType: device.type,
+        status: "PENDING",
+        attempts: 0,
+        items: items.map((item) => ({
+          ...item,
+          modifiers: [...(item.modifiers ?? [])],
+          previousModifiers: item.previousModifiers
+            ? [...item.previousModifiers]
+            : undefined,
+        })),
+      }));
+
+    if (createdJobs.length > 0) {
+      setPrinterJobs((current) => [
+        ...current,
+        ...createdJobs,
+      ]);
+    }
+  };
+
+  const markPrinterJobSent = (
+    jobId: string
+  ) => {
+    const now = new Date().toLocaleString();
+
+    setPrinterJobs((current) =>
+      current.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: "SENT",
+              attempts: job.attempts + 1,
+              updatedAt: now,
+              lastError: undefined,
+            }
+          : job
+      )
+    );
+  };
+
+  const markPrinterJobFailed = (
+    jobId: string
+  ) => {
+    const now = new Date().toLocaleString();
+
+    setPrinterJobs((current) =>
+      current.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: "FAILED",
+              attempts: job.attempts + 1,
+              updatedAt: now,
+              lastError:
+                "Simulated connection failure",
+            }
+          : job
+      )
+    );
+  };
+
+  const retryPrinterJob = (
+    jobId: string
+  ) => {
+    const now = new Date().toLocaleString();
+
+    setPrinterJobs((current) =>
+      current.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: "PENDING",
+              updatedAt: now,
+              lastError: undefined,
+            }
+          : job
+      )
+    );
+  };
+
+  const clearSentPrinterJobs = () => {
+    setPrinterJobs((current) =>
+      current.filter(
+        (job) => job.status !== "SENT"
+      )
+    );
   };
 
   const refireItem = (item: TicketItem) => {
@@ -851,18 +1188,28 @@ export default function OrderScreen({
 
     if (!confirmed) return;
 
-    addKitchenEvent("REFIRE", [
-      {
-        lineId: item.lineId,
-        name: item.name,
-        guest: item.guest,
-        qty: requestedQty,
-        modifiers: kitchenModifierLines(
-          item.selectedModifiers ?? []
-        ),
-        reason: "Manual refire",
-      },
-    ]);
+    const station = getStationForMenuItem(
+      item.menuItemId,
+      item.kitchenStationId,
+      item.kitchenStationName
+    );
+
+    addKitchenEvent(
+      "REFIRE",
+      [
+        {
+          lineId: item.lineId,
+          name: item.name,
+          guest: item.guest,
+          qty: requestedQty,
+          modifiers: kitchenModifierLines(
+            item.selectedModifiers ?? []
+          ),
+          reason: "Manual refire",
+        },
+      ],
+      station
+    );
 
     alert(
       `${requestedQty} × ${item.name} sent to Kitchen as REFIRE.`
@@ -1004,6 +1351,12 @@ export default function OrderScreen({
           sharedWith: [],
 
           selectedModifiers,
+
+          kitchenStationId: item.kitchenStationId ?? "",
+          kitchenStationName:
+            kitchenStations.find(
+              (station) => station.id === item.kitchenStationId
+            )?.name ?? "Unassigned",
         },
       ];
     });
@@ -1479,26 +1832,43 @@ export default function OrderScreen({
       );
 
       if (editingSentModifierSnapshot) {
-        addKitchenEvent("UPDATE", [
-          {
-            lineId:
-              editingSentModifierSnapshot.lineId,
-            name:
-              editingSentModifierSnapshot.name,
-            guest:
-              editingSentModifierSnapshot.guest,
-            qty:
-              editingSentModifierSnapshot.qty,
-            previousModifiers:
-              editingSentModifierSnapshot.modifiers,
-            modifiers:
-              kitchenModifierLines(
-                selectedModifiers
-              ),
-            reason:
-              "Modifier change after Kitchen send",
-          },
-        ]);
+        const editedTicketItem = ticket.find(
+          (item) =>
+            item.lineId ===
+            editingSentModifierSnapshot.lineId
+        );
+
+        const station = getStationForMenuItem(
+          editedTicketItem?.menuItemId ??
+            pendingModifierItem.id,
+          editedTicketItem?.kitchenStationId ?? "",
+          editedTicketItem?.kitchenStationName ?? ""
+        );
+
+        addKitchenEvent(
+          "UPDATE",
+          [
+            {
+              lineId:
+                editingSentModifierSnapshot.lineId,
+              name:
+                editingSentModifierSnapshot.name,
+              guest:
+                editingSentModifierSnapshot.guest,
+              qty:
+                editingSentModifierSnapshot.qty,
+              previousModifiers:
+                editingSentModifierSnapshot.modifiers,
+              modifiers:
+                kitchenModifierLines(
+                  selectedModifiers
+                ),
+              reason:
+                "Modifier change after Kitchen send",
+            },
+          ],
+          station
+        );
       }
     } else {
       commitItemToTicket(
@@ -1830,62 +2200,172 @@ export default function OrderScreen({
   };
 
   const sendToKitchen = () => {
-    const unsentItems =
-      ticket
-        .map((item) => ({
-          lineId: item.lineId,
-
-          name: item.name,
-
-          guest: item.guest,
-
-          qty: Math.max(
-            0,
-            item.qty -
-              item.sentQty
-          ),
-
-          modifiers:
-            (item.selectedModifiers ?? []).map(
-              (modifier) =>
-                `${modifier.groupName}: ${modifier.optionName}`
-            ),
-        }))
-        .filter(
-          (item) =>
-            item.qty > 0
+    const unsentLines = ticket
+      .map((item) => {
+        const qty = Math.max(
+          0,
+          item.qty - item.sentQty
         );
 
-    if (
-      unsentItems.length === 0
-    ) {
+        const station = getStationForMenuItem(
+          item.menuItemId,
+          item.kitchenStationId,
+          item.kitchenStationName
+        );
+
+        return {
+          station,
+          kitchenItem: {
+            lineId: item.lineId,
+            name: item.name,
+            guest: item.guest,
+            qty,
+            modifiers:
+              (item.selectedModifiers ?? []).map(
+                (modifier) =>
+                  `${modifier.groupName}: ${modifier.optionName}`
+              ),
+          } as KitchenBatchItem,
+        };
+      })
+      .filter(
+        (entry) =>
+          entry.kitchenItem.qty > 0
+      );
+
+    if (unsentLines.length === 0) {
       alert(
         "Nothing new to send to Kitchen."
       );
-
       return;
     }
 
-    addKitchenEvent(
-      "NEW",
-      unsentItems
+    const unassigned = unsentLines.filter(
+      (entry) => !entry.station.id
+    );
+
+    if (unassigned.length > 0) {
+      alert(
+        `${unassigned.length} line(s) have no Kitchen Station assigned. Assign a route in Back Office before sending.`
+      );
+      return;
+    }
+
+    const disabled = unsentLines.filter(
+      (entry) => !entry.station.available
+    );
+
+    if (disabled.length > 0) {
+      const names = Array.from(
+        new Set(
+          disabled.map(
+            (entry) => entry.station.name
+          )
+        )
+      ).join(", ");
+
+      alert(
+        `Cannot send because these Kitchen Stations are disabled: ${names}`
+      );
+      return;
+    }
+
+    const noOutput = unsentLines.filter(
+      (entry) =>
+        getActiveOutputDevices(entry.station).length === 0
+    );
+
+    if (noOutput.length > 0) {
+      const names = Array.from(
+        new Set(
+          noOutput.map(
+            (entry) => entry.station.name
+          )
+        )
+      ).join(", ");
+
+      alert(
+        `Cannot send because these Kitchen Stations have no enabled output device: ${names}`
+      );
+      return;
+    }
+
+    const grouped = new Map<
+      string,
+      {
+        station: {
+          id: string;
+          name: string;
+          outputDeviceIds: string[];
+        };
+        items: KitchenBatchItem[];
+      }
+    >();
+
+    unsentLines.forEach(
+      ({ station, kitchenItem }) => {
+        const existing = grouped.get(
+          station.id
+        );
+
+        if (existing) {
+          existing.items.push(kitchenItem);
+          return;
+        }
+
+        grouped.set(station.id, {
+          station: {
+            id: station.id,
+            name: station.name,
+            outputDeviceIds: station.outputDeviceIds ?? [],
+          },
+          items: [kitchenItem],
+        });
+      }
+    );
+
+    grouped.forEach(
+      ({ station, items }) => {
+        addKitchenEvent(
+          "NEW",
+          items,
+          station
+        );
+      }
     );
 
     setTicket((current) =>
       current.map((item) => ({
         ...item,
-
-        sentQty:
-          item.qty,
+        sentQty: item.qty,
       }))
     );
 
+    const stationSummary = Array.from(
+      grouped.values()
+    )
+      .map(
+        ({ station, items }) => {
+          const devices = getActiveOutputDevices(
+            station
+          )
+            .map((device) => device.name)
+            .join(" + ");
+
+          return `${station.name} → ${devices}: ${items.reduce(
+            (sum, item) => sum + item.qty,
+            0
+          )}`;
+        }
+      )
+      .join(" | ");
+
     alert(
-      `${unsentItems.reduce(
-        (sum, item) =>
-          sum + item.qty,
+      `${unsentLines.reduce(
+        (sum, entry) =>
+          sum + entry.kitchenItem.qty,
         0
-      )} new item(s) sent to Kitchen.`
+      )} new item(s) routed. ${stationSummary}`
     );
   };
 
@@ -1944,18 +2424,28 @@ export default function OrderScreen({
     };
 
     if (safeQty > 0) {
-      addKitchenEvent("CANCEL", [
-        {
-          lineId: voidItem.lineId,
-          name: voidItem.name,
-          guest: voidItem.guest,
-          qty: safeQty,
-          modifiers: kitchenModifierLines(
-            voidItem.selectedModifiers ?? []
-          ),
-          reason: finalReason,
-        },
-      ]);
+      const station = getStationForMenuItem(
+        voidItem.menuItemId,
+        voidItem.kitchenStationId,
+        voidItem.kitchenStationName
+      );
+
+      addKitchenEvent(
+        "CANCEL",
+        [
+          {
+            lineId: voidItem.lineId,
+            name: voidItem.name,
+            guest: voidItem.guest,
+            qty: safeQty,
+            modifiers: kitchenModifierLines(
+              voidItem.selectedModifiers ?? []
+            ),
+            reason: finalReason,
+          },
+        ],
+        station
+      );
     }
 
     setVoidRecords(
@@ -2199,6 +2689,19 @@ export default function OrderScreen({
             )}
           >
             Kitchen History
+          </button>
+
+          <button
+            onClick={() =>
+              setShowPrinterQueue(
+                true
+              )
+            }
+            style={topButton(
+              "#0F766E"
+            )}
+          >
+            Output Queue
           </button>
 
           <button
@@ -4141,6 +4644,259 @@ export default function OrderScreen({
         </Modal>
       )}
 
+      {/* OUTPUT / PRINTER JOB QUEUE */}
+
+      {showPrinterQueue && (
+        <Modal
+          title="Output Job Queue"
+          onClose={() =>
+            setShowPrinterQueue(false)
+          }
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                color: "#94A3B8",
+                fontSize: 12,
+              }}
+            >
+              Pending:{" "}
+              {
+                printerJobs.filter(
+                  (job) =>
+                    job.status === "PENDING"
+                ).length
+              }{" "}
+              • Failed:{" "}
+              {
+                printerJobs.filter(
+                  (job) =>
+                    job.status === "FAILED"
+                ).length
+              }{" "}
+              • Sent:{" "}
+              {
+                printerJobs.filter(
+                  (job) =>
+                    job.status === "SENT"
+                ).length
+              }
+            </div>
+
+            <button
+              onClick={
+                clearSentPrinterJobs
+              }
+              style={{
+                ...modalButton,
+                background: "#334155",
+                width: "auto",
+                padding: "8px 12px",
+              }}
+            >
+              Clear Sent
+            </button>
+          </div>
+
+          {printerJobs.length === 0 && (
+            <p
+              style={{
+                color: "#94A3B8",
+              }}
+            >
+              No output jobs yet.
+            </p>
+          )}
+
+          {[...printerJobs]
+            .reverse()
+            .map((job) => (
+              <div
+                key={job.id}
+                style={historyCard}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent:
+                      "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <div>
+                    <strong>
+                      {job.deviceName}
+                    </strong>
+
+                    <div
+                      style={{
+                        color: "#FDE68A",
+                        fontSize: 11,
+                        marginTop: 4,
+                      }}
+                    >
+                      {job.eventType} • Route →{" "}
+                      {job.stationName}
+                    </div>
+
+                    <div
+                      style={{
+                        color: "#94A3B8",
+                        fontSize: 10,
+                        marginTop: 3,
+                      }}
+                    >
+                      Created: {job.createdAt} • Attempts:{" "}
+                      {job.attempts}
+                    </div>
+                  </div>
+
+                  <span
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 9px",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      background:
+                        job.status === "PENDING"
+                          ? "#854D0E"
+                          : job.status === "SENT"
+                          ? "#14532D"
+                          : "#7F1D1D",
+                      color: "white",
+                    }}
+                  >
+                    {job.status}
+                  </span>
+                </div>
+
+                {job.items.map(
+                  (item, index) => (
+                    <div
+                      key={`${job.id}-${index}`}
+                      style={{
+                        marginTop: 8,
+                        color: "#E2E8F0",
+                      }}
+                    >
+                      {item.qty} ×{" "}
+                      {item.name}
+                      {" — "}
+                      {guestLabel(
+                        item.guest
+                      )}
+
+                      {item.modifiers?.map(
+                        (
+                          modifier,
+                          modifierIndex
+                        ) => (
+                          <div
+                            key={`${job.id}-${index}-modifier-${modifierIndex}`}
+                            style={{
+                              color: "#C4B5FD",
+                              fontSize: 11,
+                              marginTop: 3,
+                              paddingLeft: 12,
+                            }}
+                          >
+                            • {modifier}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )
+                )}
+
+                {job.lastError && (
+                  <div
+                    style={{
+                      color: "#FCA5A5",
+                      marginTop: 8,
+                      fontSize: 11,
+                    }}
+                  >
+                    Error: {job.lastError}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 7,
+                    marginTop: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {job.status === "PENDING" && (
+                    <>
+                      <button
+                        onClick={() =>
+                          markPrinterJobSent(
+                            job.id
+                          )
+                        }
+                        style={{
+                          ...modalButton,
+                          background: "#15803D",
+                          width: "auto",
+                          padding: "8px 10px",
+                        }}
+                      >
+                        Simulate Sent
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          markPrinterJobFailed(
+                            job.id
+                          )
+                        }
+                        style={{
+                          ...modalButton,
+                          background: "#B91C1C",
+                          width: "auto",
+                          padding: "8px 10px",
+                        }}
+                      >
+                        Simulate Failure
+                      </button>
+                    </>
+                  )}
+
+                  {job.status === "FAILED" && (
+                    <button
+                      onClick={() =>
+                        retryPrinterJob(
+                          job.id
+                        )
+                      }
+                      style={{
+                        ...modalButton,
+                        background: "#D97706",
+                        width: "auto",
+                        padding: "8px 10px",
+                      }}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+        </Modal>
+      )}
+
       {/* KITCHEN HISTORY */}
 
       {showKitchenHistory && (
@@ -4184,9 +4940,36 @@ export default function OrderScreen({
                     gap: 8,
                   }}
                 >
-                  <strong>
-                    {batch.createdAt}
-                  </strong>
+                  <div>
+                    <strong>
+                      {batch.createdAt}
+                    </strong>
+
+                    <div
+                      style={{
+                        color: "#FDE68A",
+                        fontSize: 12,
+                        marginTop: 4,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Route → {batch.stationName}
+                    </div>
+
+                    <div
+                      style={{
+                        color: "#93C5FD",
+                        fontSize: 11,
+                        marginTop: 3,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Device →{" "}
+                      {batch.outputDeviceNames.length > 0
+                        ? batch.outputDeviceNames.join(" + ")
+                        : "Legacy / No Device Snapshot"}
+                    </div>
+                  </div>
 
                   <span
                     style={{

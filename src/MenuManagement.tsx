@@ -9,12 +9,21 @@ export type MenuItemRecord = {
   price: number;
   available: boolean;
   modifierGroupIds: string[];
+  kitchenStationId: string;
 };
 
 type ModifierGroupRecord = {
   id: string;
   name: string;
   available: boolean;
+};
+
+type KitchenStationRecord = {
+  id: string;
+  name: string;
+  order: number;
+  available: boolean;
+  mode: "printer" | "kds" | "both";
 };
 
 type SubcategoryRecord = {
@@ -35,6 +44,7 @@ type CategoryRecord = {
 const MENU_STORAGE_KEY = "behesht-menu-items";
 const MODIFIER_STORAGE_KEY = "behesht-modifier-groups";
 const CATEGORY_STORAGE_KEY = "behesht-menu-categories";
+const KITCHEN_STATION_STORAGE_KEY = "behesht-kitchen-stations";
 
 const defaultCategories: CategoryRecord[] = [
   { id: "cat-kebab", name: "Kebab", order: 1, available: true, subcategories: [] },
@@ -46,18 +56,18 @@ const defaultCategories: CategoryRecord[] = [
 ];
 
 const defaultMenu: MenuItemRecord[] = [
-  { id: "1", name: "Koobideh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 19.99, available: true, modifierGroupIds: [] },
-  { id: "2", name: "Joojeh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 21.99, available: true, modifierGroupIds: [] },
-  { id: "3", name: "Vaziri", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 27.99, available: true, modifierGroupIds: [] },
-  { id: "4", name: "Shirazi Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 8.99, available: true, modifierGroupIds: [] },
-  { id: "5", name: "Caesar Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 12.99, available: true, modifierGroupIds: [] },
-  { id: "6", name: "Kashk Bademjan", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 13.99, available: true, modifierGroupIds: [] },
-  { id: "7", name: "Hummus", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 9.99, available: true, modifierGroupIds: [] },
-  { id: "8", name: "Tea", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 4.99, available: true, modifierGroupIds: [] },
-  { id: "9", name: "Coke", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 3.99, available: true, modifierGroupIds: [] },
-  { id: "10", name: "Water", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 2.99, available: true, modifierGroupIds: [] },
-  { id: "11", name: "Classic Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 29.99, available: true, modifierGroupIds: [] },
-  { id: "12", name: "Premium Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 39.99, available: true, modifierGroupIds: [] },
+  { id: "1", name: "Koobideh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 19.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "2", name: "Joojeh", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 21.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "3", name: "Vaziri", category: "Kebab", mainCategoryId: "cat-kebab", subcategoryId: "", price: 27.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "4", name: "Shirazi Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 8.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "5", name: "Caesar Salad", category: "Salad", mainCategoryId: "cat-salad", subcategoryId: "", price: 12.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "6", name: "Kashk Bademjan", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 13.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "7", name: "Hummus", category: "Appetizer", mainCategoryId: "cat-appetizer", subcategoryId: "", price: 9.99, available: true, modifierGroupIds: [], kitchenStationId: "station-kitchen" },
+  { id: "8", name: "Tea", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 4.99, available: true, modifierGroupIds: [], kitchenStationId: "station-bar" },
+  { id: "9", name: "Coke", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 3.99, available: true, modifierGroupIds: [], kitchenStationId: "station-bar" },
+  { id: "10", name: "Water", category: "Drinks", mainCategoryId: "cat-drinks", subcategoryId: "", price: 2.99, available: true, modifierGroupIds: [], kitchenStationId: "station-bar" },
+  { id: "11", name: "Classic Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 29.99, available: true, modifierGroupIds: [], kitchenStationId: "station-shisha" },
+  { id: "12", name: "Premium Hookah", category: "Hookah", mainCategoryId: "cat-hookah", subcategoryId: "", price: 39.99, available: true, modifierGroupIds: [], kitchenStationId: "station-shisha" },
 ];
 
 function makeId(prefix: string) {
@@ -142,6 +152,7 @@ function loadMenu(categories: CategoryRecord[]): MenuItemRecord[] {
         price: Number(item.price ?? 0),
         available: item.available === undefined ? true : Boolean(item.available),
         modifierGroupIds: Array.isArray(item.modifierGroupIds) ? item.modifierGroupIds.map(String) : [],
+        kitchenStationId: String(item.kitchenStationId ?? ""),
       };
     });
   } catch {
@@ -165,12 +176,36 @@ function loadModifierGroups(): ModifierGroupRecord[] {
   }
 }
 
+function loadKitchenStations(): KitchenStationRecord[] {
+  const saved = localStorage.getItem(KITCHEN_STATION_STORAGE_KEY);
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((station: any, index: number) => ({
+      id: String(station.id ?? `station-${index + 1}`),
+      name: String(station.name ?? "Station"),
+      order: Number(station.order ?? index + 1),
+      available: station.available === undefined ? true : Boolean(station.available),
+      mode:
+        station.mode === "kds" || station.mode === "both"
+          ? station.mode
+          : "printer",
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export default function MenuManagement({ onBack }: { onBack: () => void }) {
   const initialCategories = loadCategories();
 
   const [categories, setCategories] = useState<CategoryRecord[]>(initialCategories);
   const [items, setItems] = useState<MenuItemRecord[]>(() => loadMenu(initialCategories));
   const [modifierGroups, setModifierGroups] = useState<ModifierGroupRecord[]>(loadModifierGroups);
+  const [kitchenStations, setKitchenStations] = useState<KitchenStationRecord[]>(loadKitchenStations);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState(initialCategories[0]?.id ?? "");
@@ -205,9 +240,14 @@ export default function MenuManagement({ onBack }: { onBack: () => void }) {
   }, [items]);
 
   useEffect(() => {
-    const refresh = () => setModifierGroups(loadModifierGroups());
+    const refresh = () => {
+      setModifierGroups(loadModifierGroups());
+      setKitchenStations(loadKitchenStations());
+    };
+
     window.addEventListener("focus", refresh);
     window.addEventListener("storage", refresh);
+
     return () => {
       window.removeEventListener("focus", refresh);
       window.removeEventListener("storage", refresh);
@@ -396,6 +436,8 @@ export default function MenuManagement({ onBack }: { onBack: () => void }) {
       price: 0,
       available: true,
       modifierGroupIds: [],
+      kitchenStationId:
+        kitchenStations.find((station) => station.available)?.id ?? "",
     };
 
     setItems((current) => [...current, item]);
@@ -448,6 +490,18 @@ export default function MenuManagement({ onBack }: { onBack: () => void }) {
   const selectedItemMain = selectedItem
     ? categories.find((c) => c.id === selectedItem.mainCategoryId) ?? null
     : null;
+
+  const selectedItemStation = selectedItem
+    ? kitchenStations.find((station) => station.id === selectedItem.kitchenStationId) ?? null
+    : null;
+
+  const sortedKitchenStations = useMemo(
+    () =>
+      [...kitchenStations].sort(
+        (a, b) => a.order - b.order || a.name.localeCompare(b.name)
+      ),
+    [kitchenStations]
+  );
 
   return (
     <div style={pageStyle}>
@@ -591,6 +645,12 @@ export default function MenuManagement({ onBack }: { onBack: () => void }) {
                         ? `${item.modifierGroupIds.length} modifier group(s)`
                         : "No modifiers"}
                     </div>
+
+                    <div style={{ marginTop: 5, color: "#FDE68A", fontSize: 10 }}>
+                      Route:{" "}
+                      {kitchenStations.find((station) => station.id === item.kitchenStationId)?.name ??
+                        "Unassigned"}
+                    </div>
                   </button>
                 );
               })}
@@ -668,6 +728,41 @@ export default function MenuManagement({ onBack }: { onBack: () => void }) {
               >
                 {selectedItem.available ? "✓ Available" : "Unavailable"}
               </button>
+
+              <label style={labelStyle}>Kitchen Station</label>
+              <div style={helpTextStyle}>
+                Choose where this menu item should be routed when Send to Kitchen is pressed.
+              </div>
+
+              <select
+                value={selectedItem.kitchenStationId}
+                onChange={(e) => updateSelectedItem({ kitchenStationId: e.target.value })}
+                style={inputStyle}
+              >
+                <option value="">Unassigned</option>
+                {sortedKitchenStations.map((station) => (
+                  <option key={station.id} value={station.id}>
+                    {station.name}
+                    {station.available ? "" : " (Disabled)"}
+                  </option>
+                ))}
+              </select>
+
+              {selectedItemStation && (
+                <div
+                  style={{
+                    marginTop: 7,
+                    padding: 9,
+                    borderRadius: 8,
+                    background: "#172554",
+                    border: "1px solid #1D4ED8",
+                    color: "#BFDBFE",
+                    fontSize: 11,
+                  }}
+                >
+                  Route → {selectedItemStation.name} • {selectedItemStation.mode.toUpperCase()}
+                </div>
+              )}
 
               <label style={labelStyle}>Assigned Modifier Groups</label>
               <div style={helpTextStyle}>

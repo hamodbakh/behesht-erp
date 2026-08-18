@@ -3,10 +3,12 @@ import Login from "./Login";
 import Orders from "./Orders";
 import MenuManagement from "./MenuManagement";
 import ModifierManagement from "./ModifierManagement";
+import KitchenStationManagement from "./KitchenStationManagement";
+import PrinterKDSManagement from "./PrinterKDSManagement";
 
 type StaffRole = "Server" | "Supervisor" | "Manager" | "Owner";
 type AppMode = "pos" | "setup" | null;
-type SetupPage = "home" | "menu" | "modifiers";
+type SetupPage = "home" | "menu" | "modifiers" | "stations" | "printers";
 
 type StaffUser = {
   id: number;
@@ -216,6 +218,22 @@ function App() {
       );
     }
 
+    if (setupPage === "stations") {
+      return (
+        <KitchenStationManagement
+          onBack={() => setSetupPage("home")}
+        />
+      );
+    }
+
+    if (setupPage === "printers") {
+      return (
+        <PrinterKDSManagement
+          onBack={() => setSetupPage("home")}
+        />
+      );
+    }
+
     return (
       <div style={setupPageStyle}>
         <div style={setupHeaderStyle}>
@@ -282,9 +300,17 @@ function App() {
           />
 
           <SetupCard
+            title="Kitchen Stations"
+            description="Create Kitchen, Bar, Shisha and other routing destinations."
+            status="Available"
+            onClick={() => setSetupPage("stations")}
+          />
+
+          <SetupCard
             title="Printers / KDS"
-            description="Kitchen routing, printers and kitchen displays."
-            status="Planned"
+            description="Create printers and kitchen displays, then connect them to stations."
+            status="Available"
+            onClick={() => setSetupPage("printers")}
           />
 
           <SetupCard
